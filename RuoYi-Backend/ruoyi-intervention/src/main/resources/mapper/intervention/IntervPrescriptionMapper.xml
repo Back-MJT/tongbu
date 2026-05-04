@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.intervention.mapper.IntervPrescriptionMapper">
+
+    <resultMap type="com.ruoyi.intervention.entity.IntervPrescription" id="IntervPrescriptionResult">
+        <id     property="prescriptionId"    column="prescription_id"       />
+        <result property="prescriptionNo"    column="prescription_no"       />
+        <result property="userId"           column="user_id"               />
+        <result property="profileId"        column="profile_id"            />
+        <result property="interventionType" column="intervention_type"     />
+        <result property="status"           column="status"                />
+        <result property="durationDays"     column="duration_days"          />
+        <result property="recommendations"  column="recommendations"        />
+        <result property="sleepPlan"        column="sleep_plan"            />
+        <result property="adjustmentRules"  column="adjustment_rules"       />
+        <result property="notes"            column="notes"                  />
+        <result property="startDate"        column="start_date"            />
+        <result property="endDate"          column="end_date"              />
+        <result property="completionRate"   column="completion_rate"        />
+        <result property="delFlag"          column="del_flag"              />
+        <result property="createBy"          column="create_by"             />
+        <result property="createTime"       column="create_time"            />
+        <result property="updateBy"         column="update_by"              />
+        <result property="updateTime"       column="update_time"            />
+        <result property="tenantId"         column="tenant_id"              />
+        <result property="version"          column="version"                />
+    </resultMap>
+
+    <sql id="selectPrescriptionVo">
+        SELECT prescription_id, prescription_no, user_id, profile_id, intervention_type,
+               status, duration_days, recommendations, sleep_plan, adjustment_rules,
+               notes, start_date, end_date, completion_rate, del_flag,
+               create_by, create_time, update_by, update_time, tenant_id, version
+        FROM interv_prescription
+    </sql>
+
+    <select id="selectPrescriptionList" parameterType="com.ruoyi.intervention.entity.IntervPrescription" resultMap="IntervPrescriptionResult">
+        <include refid="selectPrescriptionVo"/>
+        WHERE del_flag = '0' AND tenant_id = #{tenantId}
+        <if test="userId != null and userId != ''">
+            AND user_id = #{userId}
+        </if>
+        <if test="interventionType != null and interventionType != ''">
+            AND intervention_type = #{interventionType}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectLatestByUserId" resultMap="IntervPrescriptionResult">
+        <include refid="selectPrescriptionVo"/>
+        WHERE del_flag = '0' AND user_id = #{userId} AND tenant_id = #{tenantId}
+        AND status = 'active'
+        ORDER BY create_time DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByUserId" resultMap="IntervPrescriptionResult">
+        <include refid="selectPrescriptionVo"/>
+        WHERE del_flag = '0' AND user_id = #{userId} AND tenant_id = #{tenantId}
+        ORDER BY create_time DESC
+    </select>
+
+    <insert id="insertPrescription" parameterType="com.ruoyi.intervention.entity.IntervPrescription" useGeneratedKeys="true" keyProperty="prescriptionId">
+        INSERT INTO interv_prescription (
+            <if test="prescriptionNo != null and prescriptionNo != ''">prescription_no,</if>
+            <if test="userId != null and userId != ''">user_id,</if>
+            <if test="profileId != null and profileId != ''">profile_id,</if>
+            <if test="interventionType != null and interventionType != ''">intervention_type,</if>
+            <if test="status != null and status != ''">status,</if>
+            <if test="durationDays != null">duration_days,</if>
+            <if test="recommendations != null">recommendations,</if>
+            <if test="sleepPlan != null">sleep_plan,</if>
+            <if test="adjustmentRules != null">adjustment_rules,</if>
+            <if test="notes != null">notes,</if>
+            <if test="startDate != null">start_date,</if>
+            <if test="endDate != null">end_date,</if>
+            <if test="completionRate != null">completion_rate,</if>
+            <if test="tenantId != null">tenant_id,</if>
+            <if test="createBy != null and createBy != ''">create_by,</if>
+            create_time
+        ) VALUES (
+            <if test="prescriptionNo != null and prescriptionNo != ''">#{prescriptionNo},</if>
+            <if test="userId != null and userId != ''">#{userId},</if>
+            <if test="profileId != null and profileId != ''">#{profileId},</if>
+            <if test="interventionType != null and interventionType != ''">#{interventionType},</if>
+            <if test="status != null and status != ''">#{status},</if>
+            <if test="durationDays != null">#{durationDays},</if>
+            <if test="recommendations != null">#{recommendations},</if>
+            <if test="sleepPlan != null">#{sleepPlan},</if>
+            <if test="adjustmentRules != null">#{adjustmentRules},</if>
+            <if test="notes != null">#{notes},</if>
+            <if test="startDate != null">#{startDate},</if>
+            <if test="endDate != null">#{endDate},</if>
+            <if test="completionRate != null">#{completionRate},</if>
+            <if test="tenantId != null">#{tenantId},</if>
+            <if test="createBy != null and createBy != ''">#{createBy},</if>
+            CURRENT_TIMESTAMP
+        )
+    </insert>
+
+</mapper>

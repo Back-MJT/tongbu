@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.ImuDataMapper">
+
+    <resultMap type="com.ruoyi.iot.domain.entity.ImuDataRecord" id="ImuDataRecordResult">
+        <result property="time"          column="time"/>
+        <result property="deviceId"      column="device_id"/>
+        <result property="deviceCode"    column="device_code"/>
+        <result property="accelX"        column="accel_x"/>
+        <result property="accelY"        column="accel_y"/>
+        <result property="accelZ"        column="accel_z"/>
+        <result property="gyroX"         column="gyro_x"/>
+        <result property="gyroY"         column="gyro_y"/>
+        <result property="gyroZ"         column="gyro_z"/>
+        <result property="sequence"      column="sequence"/>
+        <result property="batteryLevel"  column="battery_level"/>
+        <result property="motionType"    column="motion_type"/>
+        <result property="stepCount"     column="step_count"/>
+    </resultMap>
+
+    <!-- 批量写入: TimescaleDB INSERT without duplicate handling (device_imu_data has no PK/unique) -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO device_imu_data (
+            time, device_id, device_code,
+            accel_x, accel_y, accel_z,
+            gyro_x, gyro_y, gyro_z,
+            sequence, battery_level, motion_type, step_count
+        ) VALUES
+        <foreach item="item" collection="list" separator=",">
+            (
+                #{item.time}, #{item.deviceId}, #{item.deviceCode},
+                #{item.accelX}, #{item.accelY}, #{item.accelZ},
+                #{item.gyroX}, #{item.gyroY}, #{item.gyroZ},
+                #{item.sequence}, #{item.batteryLevel}, #{item.motionType}, #{item.stepCount}
+            )
+        </foreach>
+    </insert>
+
+    <!-- 按deviceId查最近N条（倒序） -->
+    <select id="selectLatestByDeviceId" resultMap="ImuDataRecordResult">
+        SELECT time, device_id, device_code,
+               accel_x, accel_y, accel_z,
+               gyro_x, gyro_y, gyro_z,
+               sequence, battery_level, motion_type, step_count
+        FROM device_imu_data
+        WHERE device_id = #{deviceId}
+        ORDER BY time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 按deviceCode查最近N条（倒序） -->
+    <select id="selectLatestByDeviceCode" resultMap="ImuDataRecordResult">
+        SELECT time, device_id, device_code,
+               accel_x, accel_y, accel_z,
+               gyro_x, gyro_y, gyro_z,
+               sequence, battery_level, motion_type, step_count
+        FROM device_imu_data
+        WHERE device_code = #{deviceCode}
+        ORDER BY time DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 按deviceCode + 时间范围查询（正序） -->
+    <select id="selectByDeviceCodeAndTimeRange" resultMap="ImuDataRecordResult">
+        SELECT time, device_id, device_code,
+               accel_x, accel_y, accel_z,
+               gyro_x, gyro_y, gyro_z,
+               sequence, battery_level, motion_type, step_count
+        FROM device_imu_data
+        WHERE device_code = #{deviceCode}
+          AND time &gt;= #{beginTime}
+          AND time &lt;= #{endTime}
+        ORDER BY time ASC
+    </select>
+
+    <!-- 按deviceCode + 时间范围计数 -->
+    <select id="countByDeviceCodeAndTimeRange" resultType="long">
+        SELECT COUNT(1)
+        FROM device_imu_data
+        WHERE device_code = #{deviceCode}
+          AND time &gt;= #{beginTime}
+          AND time &lt;= #{endTime}
+    </select>
+
+</mapper>

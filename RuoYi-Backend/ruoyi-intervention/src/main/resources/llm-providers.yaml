@@ -1,0 +1,58 @@
+# LLM提供者配置 / LLM Provider Configuration
+# 昕动智能 HealthHub v1.1 — Layer 2: Claude API Training Engine
+# Ticket: XIN-93
+#
+# Priority: lower number = higher priority in fallback chain
+# Pricing: in US cents per million tokens
+
+providers:
+  claude:
+    name: claude
+    model: claude-sonnet-4-20250514
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com
+    temperature: 0.0
+    max_tokens: 1024
+    timeout_seconds: 30
+    enabled: true
+    priority: 10
+    pricing:
+      input_per_mtok_cents: 300.0    # $3/Mtok
+      output_per_mtok_cents: 1500.0  # $15/Mtok
+    daily_cost_cap_cents: 500000.0   # ¥5000/day ~ $70/day
+
+  zai:
+    name: zai
+    model: glm-4-flash
+    api_key_env: ZAI_API_KEY
+    base_url: https://open.bigmodel.cn
+    temperature: 0.0
+    max_tokens: 1024
+    timeout_seconds: 30
+    enabled: true
+    priority: 20
+    pricing:
+      input_per_mtok_cents: 1.0      # ¥0.1/Mtok ≈ $0.014
+      output_per_mtok_cents: 1.0
+    daily_cost_cap_cents: 10000.0    # ¥100/day
+
+  openai:
+    name: openai
+    model: gpt-4o
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com
+    temperature: 0.0
+    max_tokens: 1024
+    timeout_seconds: 30
+    enabled: false
+    priority: 30
+    pricing:
+      input_per_mtok_cents: 250.0    # $2.50/Mtok
+      output_per_mtok_cents: 1000.0  # $10/Mtok
+    daily_cost_cap_cents: 500000.0
+
+# Engine settings
+engine:
+  cache_ttl_minutes: 60
+  default_max_tokens: 1024
+  health_check_interval_seconds: 300

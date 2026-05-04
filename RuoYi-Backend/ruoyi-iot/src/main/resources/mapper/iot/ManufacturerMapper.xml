@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.ManufacturerMapper">
+
+    <resultMap type="com.ruoyi.iot.domain.entity.Manufacturer" id="ManufacturerResult">
+        <id     property="manufacturerId"    column="manufacturer_id"      />
+        <result property="manufacturerName"  column="manufacturer_name"    />
+        <result property="contactPerson"     column="contact_person"       />
+        <result property="contactPhone"      column="contact_phone"        />
+        <result property="address"           column="address"              />
+        <result property="businessLicense"    column="business_license"     />
+        <result property="status"            column="status"               />
+        <result property="delFlag"           column="del_flag"             />
+        <result property="tenantId"          column="tenant_id"            />
+        <result property="createBy"          column="create_by"            />
+        <result property="createTime"        column="create_time"          />
+        <result property="updateBy"          column="update_by"            />
+        <result property="updateTime"        column="update_time"          />
+    </resultMap>
+
+    <sql id="selectManufacturerVo">
+        SELECT manufacturer_id, manufacturer_name, contact_person, contact_phone,
+               address, business_license, status, del_flag, tenant_id,
+               create_by, create_time, update_by, update_time
+        FROM iot_manufacturer
+    </sql>
+
+    <select id="selectManufacturerList" parameterType="com.ruoyi.iot.domain.entity.Manufacturer" resultMap="ManufacturerResult">
+        <include refid="selectManufacturerVo"/>
+        WHERE del_flag = '0' AND tenant_id = #{tenantId}
+        <if test="manufacturerName != null and manufacturerName != ''">
+            AND manufacturer_name LIKE CONCAT('%', #{manufacturerName}, '%')
+        </if>
+        <if test="contactPerson != null and contactPerson != ''">
+            AND contact_person LIKE CONCAT('%', #{contactPerson}, '%')
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        <if test="params.beginTime != null and params.beginTime != ''">
+            AND create_time &gt;= #{params.beginTime}
+        </if>
+        <if test="params.endTime != null and params.endTime != ''">
+            AND create_time &lt;= #{params.endTime}
+        </if>
+        ORDER BY manufacturer_id DESC
+    </select>
+
+    <select id="selectManufacturerById" parameterType="Long" resultMap="ManufacturerResult">
+        <include refid="selectManufacturerVo"/>
+        WHERE manufacturer_id = #{manufacturerId} AND tenant_id = #{tenantId}
+    </select>
+
+    <select id="selectManufacturerByName" parameterType="String" resultMap="ManufacturerResult">
+        <include refid="selectManufacturerVo"/>
+        WHERE manufacturer_name = #{manufacturerName} AND del_flag = '0' AND tenant_id = #{tenantId}
+        LIMIT 1
+    </select>
+
+    <select id="checkManufacturerNameUnique" resultMap="ManufacturerResult">
+        <include refid="selectManufacturerVo"/>
+        WHERE manufacturer_name = #{manufacturerName} AND del_flag = '0'
+        <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+        <if test="manufacturerId != null">
+            AND manufacturer_id != #{manufacturerId}
+        </if>
+        LIMIT 1
+    </select>
+
+    <insert id="insertManufacturer" parameterType="com.ruoyi.iot.domain.entity.Manufacturer" useGeneratedKeys="true" keyProperty="manufacturerId">
+        INSERT INTO iot_manufacturer (
+            manufacturer_name, contact_person, contact_phone,
+            address, business_license, status, tenant_id,
+            create_by, create_time
+        ) VALUES (
+            #{manufacturerName}, #{contactPerson}, #{contactPhone},
+            #{address}, #{businessLicense}, #{status}, #{tenantId},
+            #{createBy}, #{createTime}
+        )
+    </insert>
+
+    <update id="updateManufacturer" parameterType="com.ruoyi.iot.domain.entity.Manufacturer">
+        UPDATE iot_manufacturer
+        <set>
+            <if test="manufacturerName != null and manufacturerName != ''">manufacturer_name = #{manufacturerName},</if>
+            <if test="contactPerson != null">contact_person = #{contactPerson},</if>
+            <if test="contactPhone != null">contact_phone = #{contactPhone},</if>
+            <if test="address != null">address = #{address},</if>
+            <if test="businessLicense != null">business_license = #{businessLicense},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="tenantId != null">tenant_id = #{tenantId},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+        </set>
+        WHERE manufacturer_id = #{manufacturerId} AND tenant_id = #{tenantId}
+    </update>
+
+    <delete id="deleteManufacturerById" parameterType="Long">
+        UPDATE iot_manufacturer SET del_flag = '2' WHERE manufacturer_id = #{manufacturerId} AND tenant_id = #{tenantId}
+    </delete>
+
+    <delete id="deleteManufacturerByIds">
+        UPDATE iot_manufacturer SET del_flag = '2' WHERE manufacturer_id IN
+        <foreach item="manufacturerId" collection="manufacturerIds" open="(" separator="," close=")">
+            #{manufacturerId}
+        </foreach>
+        AND tenant_id = #{tenantId}
+    </delete>
+
+    <select id="countDevicesByManufacturerId" parameterType="Long" resultType="int">
+        SELECT COUNT(1) FROM iot_device WHERE manufacturer_id = #{manufacturerId} AND del_flag = '0'
+    </select>
+
+</mapper>

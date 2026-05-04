@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.intervention.mapper.IotDeviceBindingMapper">
+
+    <resultMap id="IotDeviceBindingMap" type="com.ruoyi.intervention.entity.IotDeviceBinding">
+        <id column="binding_id" property="bindingId"/>
+        <result column="user_id" property="userId"/>
+        <result column="device_id" property="deviceId"/>
+        <result column="device_code" property="deviceCode"/>
+        <result column="device_name" property="deviceName"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="status" property="status"/>
+        <result column="bound_at" property="boundAt"/>
+        <result column="unbound_at" property="unboundAt"/>
+        <result column="del_flag" property="delFlag"/>
+        <result column="create_by" property="createBy"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="remark" property="remark"/>
+    </resultMap>
+
+    <select id="selectByUserId" resultMap="IotDeviceBindingMap">
+        SELECT * FROM iot_device_binding
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+          AND status = 'active'
+        ORDER BY bound_at DESC
+    </select>
+
+    <select id="selectByDeviceCode" resultMap="IotDeviceBindingMap">
+        SELECT * FROM iot_device_binding
+        WHERE device_code = #{deviceCode}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+    </select>
+
+    <select id="selectByBindingId" resultMap="IotDeviceBindingMap">
+        SELECT * FROM iot_device_binding
+        WHERE binding_id = #{bindingId}
+          AND del_flag = '0'
+    </select>
+
+    <select id="selectActiveByDeviceCode" resultMap="IotDeviceBindingMap">
+        SELECT * FROM iot_device_binding
+        WHERE device_code = #{deviceCode}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+          AND status = 'active'
+    </select>
+
+    <insert id="insertBinding" useGeneratedKeys="true" keyProperty="bindingId">
+        INSERT INTO iot_device_binding (
+            user_id, device_id, device_code, device_name, tenant_id,
+            status, bound_at, del_flag, create_by, create_time
+        ) VALUES (
+            #{userId}, #{deviceId}, #{deviceCode}, #{deviceName}, #{tenantId},
+            #{status}, CURRENT_TIMESTAMP, '0', #{createBy}, CURRENT_TIMESTAMP
+        )
+    </insert>
+
+    <update id="unbindDevice">
+        UPDATE iot_device_binding
+        SET status = 'unbound',
+            unbound_at = CURRENT_TIMESTAMP,
+            del_flag = '2',
+            update_time = CURRENT_TIMESTAMP
+        WHERE binding_id = #{bindingId}
+          AND user_id = #{userId}
+          AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="activateBinding">
+        UPDATE iot_device_binding
+        SET status = 'active',
+            unbound_at = NULL,
+            del_flag = '0',
+            update_time = CURRENT_TIMESTAMP
+        WHERE binding_id = #{bindingId}
+    </update>
+
+</mapper>

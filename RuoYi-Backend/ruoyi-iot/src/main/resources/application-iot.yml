@@ -1,0 +1,67 @@
+# ===============================================================
+# IoT Module Configuration
+# Spring Boot auto-loads this when spring.profiles.active includes "iot"
+# Usage: spring.profiles.active=mysql,iot
+# ===============================================================
+
+# MQTT Configuration (EMQX)
+mqtt:
+  broker-url: tcp://localhost:1883
+  client-id: ruoyi-iot-client
+  username: ${MQTT_USERNAME:}
+  password: ${MQTT_PASSWORD:}
+  topic:
+    device-data: device/+/data
+    device-status: device/+/status
+    device-heartbeat: device/+/heartbeat
+  qos: 1
+  connection-timeout: 30
+  keepalive-interval: 60
+  auto-reconnect: true
+
+# IoT-specific properties
+iot:
+  imu:
+    flush-interval-ms: 5000
+
+# Redis Configuration (IMU cache) - merged under spring
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      password:
+      timeout: 10s
+      lettuce:
+        pool:
+          max-idle: 8
+          max-active: 8
+          min-idle: 0
+          max-wait: -1ms
+
+# IoT profile shares the main RuoYi local MySQL datasource. Keep Redis + MQTT here only.
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:xindong}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: ${DB_USER:xindong}
+      password: ${DB_PASSWORD:xindong123}
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+
+# MyBatis
+mybatis:
+  type-aliases-package: com.ruoyi.iot.domain.entity
+  mapper-locations: classpath*:mapper/iot/*Mapper.xml
+
+# Logging
+logging:
+  level:
+    com.ruoyi.iot: DEBUG
+    org.eclipse.paho: INFO

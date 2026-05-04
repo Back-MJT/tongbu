@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.TrainingSessionMapper">
+
+    <resultMap id="TrainingSessionResult" type="com.ruoyi.iot.domain.entity.TrainingSessionRecord">
+        <id property="sessionId" column="session_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="deviceId" column="device_id"/>
+        <result property="equipmentCode" column="equipment_code"/>
+        <result property="deviceCode" column="device_code"/>
+        <result property="exerciseType" column="exercise_type"/>
+        <result property="completedSets" column="completed_sets"/>
+        <result property="totalReps" column="total_reps"/>
+        <result property="totalVolumeKg" column="total_volume_kg"/>
+        <result property="durationMinutes" column="duration_minutes"/>
+        <result property="avgHeartRate" column="avg_heart_rate"/>
+        <result property="caloriesBurned" column="calories_burned"/>
+        <result property="sessionDate" column="session_date"/>
+        <result property="sessionTime" column="session_time"/>
+        <result property="prescriptionId" column="prescription_id"/>
+        <result property="stage" column="stage"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <resultMap id="TrainingSetDetailResult" type="com.ruoyi.iot.domain.entity.TrainingSetDetail">
+        <id property="setId" column="set_id"/>
+        <result property="sessionId" column="session_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="equipmentCode" column="equipment_code"/>
+        <result property="deviceCode" column="device_code"/>
+        <result property="setNo" column="set_no"/>
+        <result property="reps" column="reps"/>
+        <result property="durationSec" column="duration_sec"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="endedAt" column="ended_at"/>
+    </resultMap>
+
+    <select id="selectTrainingSessionList" parameterType="com.ruoyi.iot.domain.entity.TrainingSessionRecord" resultMap="TrainingSessionResult">
+        SELECT *
+        FROM interv_session
+        WHERE tenant_id = #{tenantId}
+          AND del_flag = '0'
+        <if test="sessionId != null">
+            AND session_id = #{sessionId}
+        </if>
+        <if test="userId != null">
+            AND user_id = #{userId}
+        </if>
+        <if test="equipmentCode != null and equipmentCode != ''">
+            AND equipment_code LIKE CONCAT('%', #{equipmentCode}, '%')
+        </if>
+        <if test="deviceCode != null and deviceCode != ''">
+            AND device_code LIKE CONCAT('%', #{deviceCode}, '%')
+        </if>
+        <if test="exerciseType != null and exerciseType != ''">
+            AND exercise_type = #{exerciseType}
+        </if>
+        <if test="stage != null and stage != ''">
+            AND stage = #{stage}
+        </if>
+        <if test="params.beginTime != null and params.beginTime != ''">
+            AND session_time &gt;= #{params.beginTime}
+        </if>
+        <if test="params.endTime != null and params.endTime != ''">
+            AND session_time &lt;= #{params.endTime}
+        </if>
+        ORDER BY session_time DESC, session_id DESC
+    </select>
+
+    <select id="selectTrainingSessionById" resultMap="TrainingSessionResult">
+        SELECT *
+        FROM interv_session
+        WHERE session_id = #{sessionId}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+    </select>
+
+    <select id="selectTrainingSetsBySessionId" resultMap="TrainingSetDetailResult">
+        SELECT *
+        FROM xd_training_set
+        WHERE session_id = #{sessionId}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+        ORDER BY set_no ASC, set_id ASC
+    </select>
+
+</mapper>

@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+*/node_modules/
+.venv/
+.m2/
+.npm-cache/
+.npm/
+.pip-cache/
+.pycache/
+
+# Build outputs
+dist/
+build/
+target/
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# Environment (contains secrets)
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Internal management (not code)
+agents/
+Board/
+content/
+content-deliverables/
+content_deliverables/
+research_deliverables/
+logs/
+tests/
+.claude/
+Grok-*
+
+# Demo/deprecated (not production)
+demo/
+agent-intervention-engine/
+
+# Temporary
+*.bak
+*.tmp
+.attach_pid*
+.last_sync_time
+
+# Mini program build
+mini-program/.swc/

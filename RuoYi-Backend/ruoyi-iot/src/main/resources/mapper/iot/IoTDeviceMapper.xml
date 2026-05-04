@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.IoTDeviceMapper">
+
+    <resultMap type="com.ruoyi.iot.domain.entity.IoTDevice" id="IoTDeviceResult">
+        <id     property="deviceId"       column="device_id"        />
+        <result property="deviceCode"     column="device_code"      />
+        <result property="deviceName"     column="device_name"      />
+        <result property="deviceType"     column="device_type"      />
+        <result property="protocol"       column="protocol"         />
+        <result property="manufacturerId" column="manufacturer_id"  />
+        <result property="tenantId"       column="tenant_id"        />
+        <result property="status"         column="status"           />
+        <result property="firmwareVersion" column="firmware_version"/>
+        <result property="bluetoothName"  column="bluetooth_name"   />
+        <result property="serviceUuid"    column="service_uuid"     />
+        <result property="notifyCharUuid" column="notify_char_uuid" />
+        <result property="lastSeenAt"     column="last_seen_at"      />
+        <result property="metadata"       column="metadata"         />
+        <result property="delFlag"        column="del_flag"          />
+        <result property="createBy"       column="create_by"        />
+        <result property="createTime"    column="create_time"       />
+        <result property="updateBy"       column="update_by"         />
+        <result property="updateTime"     column="update_time"       />
+        <result property="manufacturerName" column="manufacturer_name" />
+    </resultMap>
+
+    <sql id="selectDeviceVo">
+        SELECT d.device_id, d.device_code, d.device_name, d.device_type, d.protocol,
+               d.manufacturer_id, d.tenant_id, d.status, d.firmware_version,
+               d.bluetooth_name, d.service_uuid, d.notify_char_uuid,
+               d.last_seen_at, d.metadata, d.del_flag,
+               d.create_by, d.create_time, d.update_by, d.update_time,
+               m.manufacturer_name
+        FROM iot_device d
+        LEFT JOIN iot_manufacturer m ON d.manufacturer_id = m.manufacturer_id
+    </sql>
+
+    <select id="selectDeviceList" parameterType="com.ruoyi.iot.domain.entity.IoTDevice" resultMap="IoTDeviceResult">
+        <include refid="selectDeviceVo"/>
+        WHERE d.del_flag = '0' AND d.tenant_id = #{tenantId}
+        <if test="deviceCode != null and deviceCode != ''">
+            AND d.device_code LIKE CONCAT('%', #{deviceCode}, '%')
+        </if>
+        <if test="deviceName != null and deviceName != ''">
+            AND d.device_name LIKE CONCAT('%', #{deviceName}, '%')
+        </if>
+        <if test="deviceType != null and deviceType != ''">
+            AND d.device_type = #{deviceType}
+        </if>
+        <if test="protocol != null and protocol != ''">
+            AND d.protocol = #{protocol}
+        </if>
+        <if test="status != null and status != ''">
+            AND d.status = #{status}
+        </if>
+        <if test="manufacturerId != null">
+            AND d.manufacturer_id = #{manufacturerId}
+        </if>
+        <if test="params.beginTime != null and params.beginTime != ''">
+            AND d.create_time &gt;= #{params.beginTime}
+        </if>
+        <if test="params.endTime != null and params.endTime != ''">
+            AND d.create_time &lt;= #{params.endTime}
+        </if>
+        ORDER BY d.device_id DESC
+    </select>
+
+    <select id="selectDeviceById" parameterType="com.ruoyi.iot.domain.entity.IoTDevice" resultMap="IoTDeviceResult">
+        <include refid="selectDeviceVo"/>
+        WHERE d.device_id = #{deviceId} AND d.tenant_id = #{tenantId} AND d.del_flag = '0'
+    </select>
+
+    <select id="selectDeviceByCode" parameterType="com.ruoyi.iot.domain.entity.IoTDevice" resultMap="IoTDeviceResult">
+        <include refid="selectDeviceVo"/>
+        WHERE d.device_code = #{deviceCode} AND d.del_flag = '0' AND d.tenant_id = #{tenantId}
+    </select>
+
+    <select id="selectDeviceByCodeRaw" parameterType="String" resultMap="IoTDeviceResult">
+        <include refid="selectDeviceVo"/>
+        WHERE d.device_code = #{deviceCode}
+    </select>
+
+    <insert id="insertDevice" parameterType="com.ruoyi.iot.domain.entity.IoTDevice" useGeneratedKeys="true" keyProperty="deviceId">
+        INSERT INTO iot_device (
+            device_code, device_name, device_type, protocol,
+            manufacturer_id, tenant_id, status, firmware_version,
+            bluetooth_name, service_uuid, notify_char_uuid,
+            metadata, create_by, create_time
+        ) VALUES (
+            #{deviceCode}, #{deviceName}, #{deviceType}, #{protocol},
+            #{manufacturerId}, #{tenantId}, #{status}, #{firmwareVersion},
+            #{bluetoothName}, #{serviceUuid}, #{notifyCharUuid},
+            #{metadata}, #{createBy}, #{createTime}
+        )
+    </insert>
+
+    <update id="updateDevice" parameterType="com.ruoyi.iot.domain.entity.IoTDevice">
+        UPDATE iot_device
+        <set>
+            <if test="deviceName != null">device_name = #{deviceName},</if>
+            <if test="deviceType != null">device_type = #{deviceType},</if>
+            <if test="protocol != null">protocol = #{protocol},</if>
+            <if test="manufacturerId != null">manufacturer_id = #{manufacturerId},</if>
+            <if test="tenantId != null">tenant_id = #{tenantId},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="firmwareVersion != null">firmware_version = #{firmwareVersion},</if>
+            <if test="bluetoothName != null">bluetooth_name = #{bluetoothName},</if>
+            <if test="serviceUuid != null">service_uuid = #{serviceUuid},</if>
+            <if test="notifyCharUuid != null">notify_char_uuid = #{notifyCharUuid},</if>
+            <if test="metadata != null">metadata = #{metadata},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+        </set>
+        WHERE device_id = #{deviceId} AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="updateDeviceStatus">
+        UPDATE iot_device SET status = #{status} WHERE device_id = #{deviceId}
+    </update>
+
+    <update id="updateLastSeenAt">
+        UPDATE iot_device SET last_seen_at = NOW() WHERE device_id = #{deviceId}
+    </update>
+
+    <delete id="deleteDeviceById" parameterType="Long">
+        UPDATE iot_device SET del_flag = '2' WHERE device_id = #{deviceId} AND tenant_id = #{tenantId}
+    </delete>
+
+    <delete id="deleteDeviceByIds">
+        UPDATE iot_device SET del_flag = '2' WHERE device_id IN
+        <foreach item="deviceId" collection="deviceIds" open="(" separator="," close=")">
+            #{deviceId}
+        </foreach>
+        AND tenant_id = #{tenantId}
+    </delete>
+
+    <select id="countByManufacturerId" parameterType="Long" resultType="int">
+        SELECT COUNT(1) FROM iot_device WHERE manufacturer_id = #{manufacturerId} AND del_flag = '0'
+    </select>
+
+</mapper>

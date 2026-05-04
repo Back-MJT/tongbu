@@ -1,0 +1,41 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: xindong-local-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: xindong
+      MYSQL_USER: xindong
+      MYSQL_PASSWORD: xindong123
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - xindong_mysql_data:/var/lib/mysql
+      - ./RuoYi-Backend/sql/ry_20260321.sql:/docker-entrypoint-initdb.d/01-ry.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot123456 --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: xindong-local-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - xindong_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  xindong_mysql_data:
+  xindong_redis_data:

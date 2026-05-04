@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.MiniEquipmentMapper">
+
+    <resultMap id="EquipmentResolveResultMap" type="com.ruoyi.iot.domain.model.EquipmentResolveResult">
+        <id property="equipmentId" column="equipment_id" />
+        <result property="equipmentCode" column="equipment_code" />
+        <result property="equipmentName" column="equipment_name" />
+        <result property="equipmentType" column="equipment_type" />
+        <result property="location" column="location" />
+        <result property="deviceId" column="device_id" />
+        <result property="deviceCode" column="device_code" />
+        <result property="bluetoothName" column="bluetooth_name" />
+        <result property="serviceUuid" column="service_uuid" />
+        <result property="notifyCharUuid" column="notify_char_uuid" />
+        <association property="countingConfig" javaType="com.ruoyi.iot.domain.model.EquipmentResolveResult$CountingConfig">
+            <result property="mainAxis" column="main_axis" />
+            <result property="upThreshold" column="up_threshold" />
+            <result property="downThreshold" column="down_threshold" />
+            <result property="minIntervalMs" column="min_interval_ms" />
+            <result property="minRange" column="min_range" />
+            <result property="smoothingWindow" column="smoothing_window" />
+        </association>
+    </resultMap>
+
+    <select id="selectEquipmentResolveResult" resultMap="EquipmentResolveResultMap">
+        SELECT e.equipment_id,
+               e.equipment_code,
+               e.equipment_name,
+               e.equipment_type,
+               e.location,
+               d.device_id,
+               d.device_code,
+               d.bluetooth_name,
+               d.service_uuid,
+               d.notify_char_uuid,
+               cfg.main_axis,
+               cfg.up_threshold,
+               cfg.down_threshold,
+               cfg.min_interval_ms,
+               cfg.min_range,
+               cfg.smoothing_window
+        FROM xd_equipment e
+        LEFT JOIN xd_equipment_device ed
+               ON ed.equipment_id = e.equipment_id
+              AND ed.status = 'active'
+              AND ed.del_flag = '0'
+        LEFT JOIN iot_device d
+               ON d.device_id = ed.device_id
+              AND d.del_flag = '0'
+        LEFT JOIN xd_equipment_counting_config cfg
+               ON cfg.equipment_type = e.equipment_type
+              AND cfg.tenant_id = e.tenant_id
+              AND cfg.status = '0'
+              AND cfg.del_flag = '0'
+        WHERE e.equipment_code = #{equipmentCode}
+          AND e.tenant_id = #{tenantId}
+          AND e.del_flag = '0'
+        LIMIT 1
+    </select>
+
+</mapper>

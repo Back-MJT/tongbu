@@ -1,0 +1,145 @@
+version: '3.8'
+
+# ============================================
+# 昕动智能平台 - 生产环境部署配置
+# ============================================
+# 使用说明：
+# 1. 复制 .env.example 为 .env 并修改配置
+# 2. 执行: docker compose -f docker-compose.production.yml up -d
+# 3. 访问: http://your-server-ip:3080
+# ============================================
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.4
+    container_name: xindong-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root123456}
+      MYSQL_DATABASE: ${DB_NAME:-xindong}
+      MYSQL_USER: ${DB_USER:-xindong}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-xindong123}
+      TZ: Asia/Shanghai
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./RuoYi-Backend/sql/ry_20260321.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./RuoYi-Backend/sql/upgrade_equipment_device_binding.sql:/docker-entrypoint-initdb.d/02-upgrade.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+      - --max_connections=1000
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - xindong-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: xindong-redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD:-} --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - xindong-network
+
+  # 后端服务
+  backend:
+    build:
+      context: ./RuoYi-Backend
+      dockerfile: Dockerfile
+    image: xindong-backend:latest
+    container_name: xindong-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2048m -XX:+UseG1GC
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-xindong}
+      - DB_USER=${DB_USER:-xindong}
+      - DB_PASSWORD=${DB_PASSWORD:-xindong123}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - WECHAT_APPID=${WECHAT_APPID:-}
+      - WECHAT_SECRET=${WECHAT_SECRET:-}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+      - SPRING_PROFILES_ACTIVE=mysql,iot
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    volumes:
+      - backend_logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - xindong-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./RuoYi-Vue3-master
+      dockerfile: Dockerfile
+      args:
+        - VITE_APP_BASE_API=/prod-api
+    image: xindong-frontend:latest
+    container_name: xindong-frontend
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - xindong-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  xindong-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local

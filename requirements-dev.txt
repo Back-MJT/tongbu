@@ -1,0 +1,2 @@
+# Project helper scripts currently use only the Python standard library.
+# Keep this file so the local .venv has a stable install target.

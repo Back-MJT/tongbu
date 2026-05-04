@@ -1,0 +1,17 @@
+XIN-91 C端小程序PRD v2.0 — 交付完成
+
+**日期**: 2026-04-14
+**交付物**: /media/ai-no1/workspace/Xindong_Corp/product/PRD_C_MINIPROGRAM_v2.0.md
+**状态**: DONE ✅
+
+**核心内容**:
+- 对齐Board v1.1四层产品体系（健身器械IMU+厂家设备）
+- 数据源从"健康机构+穿戴设备" → "健身器械IMU+BLE模组"
+- 删除：机构邀请码、睡眠/营养/压力处方、5维健康雷达
+- 新增：扫码绑定设备、组数自动记录、运动能力5维雷达
+- 10个用户故事（W3-US-P-001~010）
+- BLE通信协议定义
+- Claude API调用流程
+- 6周MVP交付范围
+
+**Paperclip状态更新**: API返回500错误，需手动在Board界面更新状态为done

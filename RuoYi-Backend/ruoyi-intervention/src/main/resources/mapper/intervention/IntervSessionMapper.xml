@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.intervention.mapper.IntervSessionMapper">
+
+    <resultMap id="IntervSessionMap" type="com.ruoyi.intervention.entity.IntervSession">
+        <id column="session_id" property="sessionId"/>
+        <result column="user_id" property="userId"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="device_id" property="deviceId"/>
+        <result column="equipment_code" property="equipmentCode"/>
+        <result column="device_code" property="deviceCode"/>
+        <result column="exercise_type" property="exerciseType"/>
+        <result column="completed_sets" property="completedSets"/>
+        <result column="total_reps" property="totalReps"/>
+        <result column="total_volume_kg" property="totalVolumeKg"/>
+        <result column="duration_minutes" property="durationMinutes"/>
+        <result column="avg_heart_rate" property="avgHeartRate"/>
+        <result column="calories_burned" property="caloriesBurned"/>
+        <result column="session_date" property="sessionDate"/>
+        <result column="session_time" property="sessionTime"/>
+        <result column="prescription_id" property="prescriptionId"/>
+        <result column="stage" property="stage"/>
+        <result column="del_flag" property="delFlag"/>
+        <result column="create_by" property="createBy"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_by" property="updateBy"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="remark" property="remark"/>
+    </resultMap>
+
+    <select id="selectByUserId" resultMap="IntervSessionMap">
+        SELECT * FROM interv_session
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+        ORDER BY session_time DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM interv_session
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+    </select>
+
+    <select id="selectTodayByUserId" resultMap="IntervSessionMap">
+        SELECT * FROM interv_session
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND session_date = #{date}
+          AND del_flag = '0'
+        ORDER BY session_time DESC
+    </select>
+
+    <select id="selectByPrescriptionId" resultMap="IntervSessionMap">
+        SELECT * FROM interv_session
+        WHERE prescription_id = #{prescriptionId}
+          AND del_flag = '0'
+        ORDER BY session_time DESC
+    </select>
+
+    <insert id="insertSession" useGeneratedKeys="true" keyProperty="sessionId">
+        INSERT INTO interv_session (
+            user_id, tenant_id, device_id, equipment_code, device_code, exercise_type,
+            completed_sets, total_reps, total_volume_kg, duration_minutes,
+            avg_heart_rate, calories_burned, session_date, session_time,
+            prescription_id, stage, del_flag, create_by, create_time
+        ) VALUES (
+            #{userId}, #{tenantId}, #{deviceId}, #{equipmentCode}, #{deviceCode}, #{exerciseType},
+            #{completedSets}, #{totalReps}, #{totalVolumeKg}, #{durationMinutes},
+            #{avgHeartRate}, #{caloriesBurned}, #{sessionDate}, #{sessionTime},
+            #{prescriptionId}, #{stage}, '0', #{createBy}, CURRENT_TIMESTAMP
+        )
+    </insert>
+
+    <update id="updateSession">
+        UPDATE interv_session
+        SET completed_sets = #{completedSets},
+            total_reps = #{totalReps},
+            total_volume_kg = #{totalVolumeKg},
+            duration_minutes = #{durationMinutes},
+            avg_heart_rate = #{avgHeartRate},
+            update_time = CURRENT_TIMESTAMP
+        WHERE session_id = #{sessionId}
+          AND del_flag = '0'
+    </update>
+
+</mapper>

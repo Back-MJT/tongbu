@@ -1,0 +1,40 @@
+{
+  "name": "xindong-mini-program",
+  "version": "1.0.0",
+  "description": "昕动智能微信小程序 - 健身数据追踪与AI训练方案",
+  "private": true,
+  "engines": {
+    "node": ">=20 <23",
+    "npm": ">=10 <12"
+  },
+  "scripts": {
+    "prepare:local": "node scripts/write-local-env.mjs",
+    "dev:weapp": "npm run prepare:local && taro build --type weapp",
+    "dev:h5": "taro build --type h5",
+    "build:weapp": "npm run prepare:local && taro build --type weapp",
+    "build:h5": "taro build --type h5",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@tarojs/components": "^4.0.0",
+    "@tarojs/plugin-framework-vue3": "^4.0.0",
+    "@tarojs/plugin-platform-weapp": "^4.0.0",
+    "@tarojs/runtime": "^4.0.0",
+    "@tarojs/taro": "^4.0.0",
+    "pinia": "^2.1.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@tarojs/cli": "^4.0.0",
+    "@tarojs/webpack5-runner": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "@vue/babel-plugin-jsx": "^1.5.0",
+    "@vue/compiler-sfc": "^3.4.0",
+    "babel-preset-taro": "^4.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vue-loader": "^17.0.0",
+    "webpack": "^5.91.0"
+  }
+}

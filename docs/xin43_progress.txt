@@ -1,0 +1,73 @@
+# XIN-43 进度更新
+
+## 已完成交付物
+
+### 1. MVP 验收报告
+路径: `product/mvp_acceptance.md`
+
+**总体结论: PASS with Gaps**
+
+| 验收项 | 状态 |
+|--------|------|
+| 多租户架构 | ✅ PASS |
+| 认证授权 (JWT + RBAC) | ✅ PASS |
+| Dashboard KPI API | ✅ PASS |
+| 设备管理 API | ✅ PASS |
+| 健康师工作台 API | ✅ PASS |
+| 数据持久化 | ❌ Gap #1 — in-memory，生产不可用 |
+| Demo 数据初始化 | ❌ Gap #2 — startup 未自动初始化 |
+| KPI 真实计算 | ❌ Gap #5 — 全部假数据 |
+| viewer 权限 | ❌ Gap #6 — viewer 可访问用户列表 |
+| 健康师真实数据 | ❌ Gap #3 — 伪随机生成数据 |
+| 胖终端登录 | ❌ Gap #4 — tenant discovery 未实现 |
+| 告警面板 | ⚠️ MISSING |
+| 数据导出 | ⚠️ MISSING |
+
+### 2. Wave 2 用户故事
+路径: `product/wave2_user_stories.md`
+
+**12 个用户故事，分布在 3 个 Sprint:**
+
+- Sprint 1 (P0): PostgreSQL 迁移、Demo 初始化、KPI 真实计算、viewer 权限修复
+- Sprint 2 (P1): 健康师真实数据、机构自助注册、Token 撤销
+- Sprint 3+ (P2): 告警面板、数据导出、依从性追踪
+
+---
+
+## 发现的 8 个 Gap
+
+| # | Gap | 严重性 | Sprint |
+|---|-----|--------|--------|
+| G1 | PostgreSQL 迁移 | P0 | Sprint 1 |
+| G2 | Demo 初始化 | P0 | Sprint 1 |
+| G5 | KPI 真实计算 | P0 | Sprint 1 |
+| G6 | viewer 权限收窄 | P0 | Sprint 1 |
+| G3 | 健康师真实数据 | P1 | Sprint 2 |
+| G4 | 胖终端登录 | P1 | Sprint 2 |
+| G7 | 告警面板 | P2 | Sprint 3+ |
+| G8 | 数据导出 | P2 | Sprint 3+ |
+
+---
+
+## 代码质量亮点
+
+- Pydantic 模型定义精确，类型安全
+- 中间件 `tenant_id` 注入机制清晰
+- RBAC 三角色隔离逻辑正确
+- 模块划分清晰（auth/tenants/users/devices/dashboard/coach）
+
+## 代码质量需改进
+
+- SHA256 密码哈希（生产需 bcrypt）
+- in-memory store 无法用于生产
+- 假数据生成掩盖了真实数据流缺失
+
+---
+
+## 建议
+
+1. Wave 2 Sprint 1 优先修复 G1, G2, G5, G6（均为阻断性问题）
+2. Sprint 2 修复 G3, G4（功能完整性）
+3. Sprint 3+ 处理 G7, G8（增强功能）
+
+状态: 已完成验收 + Wave 2 用户故事已细化

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.DeviceGroupMapper">
+
+    <resultMap type="com.ruoyi.iot.domain.entity.DeviceGroup" id="DeviceGroupResult">
+        <id     property="groupId"            column="group_id"           />
+        <result property="groupName"          column="group_name"         />
+        <result property="manufacturerId"      column="manufacturer_id"    />
+        <result property="description"        column="description"        />
+        <result property="delFlag"            column="del_flag"           />
+        <result property="tenantId"           column="tenant_id"         />
+        <result property="createBy"           column="create_by"         />
+        <result property="createTime"         column="create_time"       />
+        <result property="updateBy"           column="update_by"         />
+        <result property="updateTime"         column="update_time"       />
+        <result property="manufacturerName"   column="manufacturer_name"  />
+        <result property="deviceCount"        column="device_count"      />
+    </resultMap>
+
+    <sql id="selectGroupVo">
+        SELECT g.group_id, g.group_name, g.manufacturer_id, g.description, g.del_flag, g.tenant_id,
+               g.create_by, g.create_time, g.update_by, g.update_time,
+               m.manufacturer_name,
+               (SELECT COUNT(1) FROM iot_device_group_rel r WHERE r.group_id = g.group_id) AS device_count
+        FROM iot_device_group g
+        LEFT JOIN iot_manufacturer m ON g.manufacturer_id = m.manufacturer_id AND m.del_flag = '0'
+    </sql>
+
+    <select id="selectDeviceGroupList" parameterType="com.ruoyi.iot.domain.entity.DeviceGroup" resultMap="DeviceGroupResult">
+        <include refid="selectGroupVo"/>
+        WHERE g.del_flag = '0' AND g.tenant_id = #{tenantId}
+        <if test="groupName != null and groupName != ''">
+            AND g.group_name LIKE CONCAT('%', #{groupName}, '%')
+        </if>
+        <if test="manufacturerId != null">
+            AND g.manufacturer_id = #{manufacturerId}
+        </if>
+        ORDER BY g.group_id DESC
+    </select>
+
+    <select id="selectDeviceGroupById" parameterType="Long" resultMap="DeviceGroupResult">
+        <include refid="selectGroupVo"/>
+        WHERE g.group_id = #{groupId} AND g.tenant_id = #{tenantId}
+    </select>
+
+    <insert id="insertDeviceGroup" parameterType="com.ruoyi.iot.domain.entity.DeviceGroup" useGeneratedKeys="true" keyProperty="groupId">
+        INSERT INTO iot_device_group (
+            group_name, manufacturer_id, description,
+            del_flag, tenant_id, create_by, create_time
+        ) VALUES (
+            #{groupName}, #{manufacturerId}, #{description},
+            '0', #{tenantId}, #{createBy}, #{createTime}
+        )
+    </insert>
+
+    <update id="updateDeviceGroup" parameterType="com.ruoyi.iot.domain.entity.DeviceGroup">
+        UPDATE iot_device_group
+        <set>
+            <if test="groupName != null and groupName != ''">group_name = #{groupName},</if>
+            <if test="manufacturerId != null">manufacturer_id = #{manufacturerId},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="tenantId != null">tenant_id = #{tenantId},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+        </set>
+        WHERE group_id = #{groupId} AND tenant_id = #{tenantId}
+    </update>
+
+    <delete id="deleteDeviceGroupById" parameterType="Long">
+        UPDATE iot_device_group SET del_flag = '2' WHERE group_id = #{groupId} AND tenant_id = #{tenantId}
+    </delete>
+
+    <delete id="deleteDeviceGroupByIds" parameterType="Long">
+        UPDATE iot_device_group SET del_flag = '2' WHERE group_id IN
+        <foreach item="groupId" collection="array" open="(" separator="," close=")">
+            #{groupId}
+        </foreach>
+        AND tenant_id = #{tenantId}
+    </delete>
+
+    <select id="countDevicesInGroup" parameterType="Long" resultType="int">
+        SELECT COUNT(1) FROM iot_device_group_rel WHERE group_id = #{groupId}
+    </select>
+
+    <insert id="insertDeviceGroupRel">
+        INSERT INTO iot_device_group_rel (device_id, group_id)
+        SELECT #{deviceId}, #{groupId}
+        WHERE NOT EXISTS (
+            SELECT 1 FROM iot_device_group_rel WHERE device_id = #{deviceId} AND group_id = #{groupId}
+        )
+    </insert>
+
+    <delete id="deleteDeviceGroupRel">
+        DELETE FROM iot_device_group_rel WHERE device_id = #{deviceId} AND group_id = #{groupId}
+    </delete>
+
+    <delete id="deleteAllDeviceGroupRels" parameterType="Long">
+        DELETE FROM iot_device_group_rel WHERE group_id = #{groupId}
+    </delete>
+
+    <select id="selectGroupIdsByDeviceId" parameterType="Long" resultType="Long">
+        SELECT group_id FROM iot_device_group_rel WHERE device_id = #{deviceId}
+    </select>
+
+    <select id="selectDeviceIdsByGroupId" parameterType="Long" resultType="Long">
+        SELECT device_id FROM iot_device_group_rel WHERE group_id = #{groupId}
+    </select>
+
+</mapper>

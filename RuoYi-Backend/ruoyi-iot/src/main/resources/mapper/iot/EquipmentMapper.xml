@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.iot.mapper.EquipmentMapper">
+
+    <resultMap type="com.ruoyi.iot.domain.entity.Equipment" id="EquipmentResult">
+        <id property="equipmentId" column="equipment_id"/>
+        <result property="equipmentCode" column="equipment_code"/>
+        <result property="equipmentName" column="equipment_name"/>
+        <result property="equipmentType" column="equipment_type"/>
+        <result property="location" column="location"/>
+        <result property="qrContent" column="qr_content"/>
+        <result property="tenantId" column="tenant_id"/>
+        <result property="status" column="status"/>
+        <result property="delFlag" column="del_flag"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+        <result property="deviceId" column="device_id"/>
+        <result property="deviceCode" column="device_code"/>
+        <result property="deviceName" column="device_name"/>
+        <result property="bluetoothName" column="bluetooth_name"/>
+    </resultMap>
+
+    <sql id="selectEquipmentVo">
+        SELECT e.equipment_id, e.equipment_code, e.equipment_name, e.equipment_type,
+               e.location, e.qr_content, e.bluetooth_name, e.tenant_id, e.status, e.del_flag,
+               e.create_by, e.create_time, e.update_by, e.update_time, e.remark,
+               d.device_id, d.device_code, d.device_name
+        FROM xd_equipment e
+        LEFT JOIN xd_equipment_device ed
+               ON ed.equipment_id = e.equipment_id
+              AND ed.status = 'active'
+              AND ed.del_flag = '0'
+        LEFT JOIN iot_device d
+               ON d.device_id = ed.device_id
+              AND d.del_flag = '0'
+    </sql>
+
+    <select id="selectEquipmentList" parameterType="com.ruoyi.iot.domain.entity.Equipment" resultMap="EquipmentResult">
+        <include refid="selectEquipmentVo"/>
+        WHERE e.del_flag = '0' AND e.tenant_id = #{tenantId}
+        <if test="equipmentCode != null and equipmentCode != ''">
+            AND e.equipment_code LIKE CONCAT('%', #{equipmentCode}, '%')
+        </if>
+        <if test="equipmentName != null and equipmentName != ''">
+            AND e.equipment_name LIKE CONCAT('%', #{equipmentName}, '%')
+        </if>
+        <if test="equipmentType != null and equipmentType != ''">
+            AND e.equipment_type = #{equipmentType}
+        </if>
+        <if test="status != null and status != ''">
+            AND e.status = #{status}
+        </if>
+        <if test="params.beginTime != null and params.beginTime != ''">
+            AND e.create_time &gt;= #{params.beginTime}
+        </if>
+        <if test="params.endTime != null and params.endTime != ''">
+            AND e.create_time &lt;= #{params.endTime}
+        </if>
+        ORDER BY e.equipment_id DESC
+    </select>
+
+    <select id="selectEquipmentById" parameterType="com.ruoyi.iot.domain.entity.Equipment" resultMap="EquipmentResult">
+        <include refid="selectEquipmentVo"/>
+        WHERE e.equipment_id = #{equipmentId} AND e.tenant_id = #{tenantId} AND e.del_flag = '0'
+    </select>
+
+    <select id="selectEquipmentByCode" parameterType="com.ruoyi.iot.domain.entity.Equipment" resultMap="EquipmentResult">
+        <include refid="selectEquipmentVo"/>
+        WHERE e.equipment_code = #{equipmentCode} AND e.tenant_id = #{tenantId} AND e.del_flag = '0'
+    </select>
+
+    <insert id="insertEquipment" parameterType="com.ruoyi.iot.domain.entity.Equipment" useGeneratedKeys="true" keyProperty="equipmentId">
+        INSERT INTO xd_equipment (
+            equipment_code, equipment_name, equipment_type, location, qr_content,
+            bluetooth_name, tenant_id, status, create_by, create_time, remark
+        ) VALUES (
+            #{equipmentCode}, #{equipmentName}, #{equipmentType}, #{location}, #{qrContent},
+            #{bluetoothName}, #{tenantId}, #{status}, #{createBy}, #{createTime}, #{remark}
+        )
+    </insert>
+
+    <update id="updateEquipment" parameterType="com.ruoyi.iot.domain.entity.Equipment">
+        UPDATE xd_equipment
+        <set>
+            <if test="equipmentCode != null">equipment_code = #{equipmentCode},</if>
+            <if test="equipmentName != null">equipment_name = #{equipmentName},</if>
+            <if test="equipmentType != null">equipment_type = #{equipmentType},</if>
+            <if test="location != null">location = #{location},</if>
+            <if test="qrContent != null">qr_content = #{qrContent},</if>
+            <if test="bluetoothName != null">bluetooth_name = #{bluetoothName},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+            <if test="remark != null">remark = #{remark},</if>
+        </set>
+        WHERE equipment_id = #{equipmentId} AND tenant_id = #{tenantId}
+    </update>
+
+    <delete id="deleteEquipmentById" parameterType="com.ruoyi.iot.domain.entity.Equipment">
+        UPDATE xd_equipment SET del_flag = '2' WHERE equipment_id = #{equipmentId} AND tenant_id = #{tenantId}
+    </delete>
+
+    <delete id="deleteEquipmentByIds">
+        UPDATE xd_equipment SET del_flag = '2' WHERE equipment_id IN
+        <foreach item="equipmentId" collection="equipmentIds" open="(" separator="," close=")">
+            #{equipmentId}
+        </foreach>
+        AND tenant_id = #{tenantId}
+    </delete>
+
+</mapper>

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    image: eclipse-temurin:17-jre-jammy
+    container_name: xindong-backend
+    working_dir: /app
+    volumes:
+      - ./RuoYi-Backend/ruoyi-admin/target/ruoyi-admin.jar:/app/app.jar:ro
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2048m -XX:+UseG1GC
+      - DB_HOST=host.docker.internal
+      - DB_PORT=3306
+      - DB_NAME=xindong
+      - DB_USER=xindong
+      - DB_PASSWORD=xindong123
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - SPRING_PROFILES_ACTIVE=mysql,iot
+    network_mode: host
+    command: java ${JAVA_OPTS} -jar /app/app.jar
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
