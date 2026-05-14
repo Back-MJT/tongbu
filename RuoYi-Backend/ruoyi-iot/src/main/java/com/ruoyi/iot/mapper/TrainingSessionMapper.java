@@ -1,6 +1,7 @@
 package com.ruoyi.iot.mapper;
 
 import java.util.List;
+import java.util.Map;
 import org.apache.ibatis.annotations.Param;
 import com.ruoyi.iot.domain.entity.TrainingSessionRecord;
 import com.ruoyi.iot.domain.entity.TrainingSetDetail;
@@ -15,4 +16,8 @@ public interface TrainingSessionMapper
     TrainingSessionRecord selectTrainingSessionById(@Param("sessionId") Long sessionId, @Param("tenantId") Long tenantId);
 
     List<TrainingSetDetail> selectTrainingSetsBySessionId(@Param("sessionId") Long sessionId, @Param("tenantId") Long tenantId);
+
+    Map<String, Object> selectUserTrainingSummary(@Param("userId") Long userId, @Param("tenantId") Long tenantId);
+
+    Map<String, Object> selectUserRecentTrainingBasis(@Param("userId") Long userId, @Param("tenantId") Long tenantId);
 }

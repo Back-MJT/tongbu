@@ -16,3 +16,11 @@ export function getTrainingSession(sessionId) {
     method: 'get'
   })
 }
+
+// 查询用户真实训练摘要和个性化生成依据
+export function getUserTrainingSummary(userId) {
+  return request({
+    url: '/iot/training/session/user-summary/' + userId,
+    method: 'get'
+  })
+}

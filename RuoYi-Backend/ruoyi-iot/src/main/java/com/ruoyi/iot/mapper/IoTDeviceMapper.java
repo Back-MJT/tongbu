@@ -32,6 +32,11 @@ public interface IoTDeviceMapper
     public IoTDevice selectDeviceByCodeRaw(String deviceCode);
 
     /**
+     * 根据蓝牙广播名称查询
+     */
+    public IoTDevice selectDeviceByBluetoothName(@Param("bluetoothName") String bluetoothName, @Param("tenantId") Long tenantId);
+
+    /**
      * 新增设备
      */
     public int insertDevice(IoTDevice iotDevice);

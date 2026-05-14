@@ -36,6 +36,11 @@
     </el-form>
 
     <el-row :gutter="10" class="mb8">
+      <el-col :span="1.5">
+        <el-button type="success" plain icon="User" :disabled="!queryParams.userId" @click="handleUserSummary">
+          用户摘要
+        </el-button>
+      </el-col>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
@@ -123,12 +128,45 @@
       </template>
       <el-empty v-else description="暂无详情数据" />
     </el-drawer>
+
+    <el-drawer v-model="summaryOpen" title="用户真实训练数据" size="42%" direction="rtl">
+      <div v-if="summaryLoading" class="detail-loading">
+        <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+      </div>
+      <template v-else-if="userSummary">
+        <el-card shadow="never" class="mb16">
+          <template #header><span>真实使用数据</span></template>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="用户ID">{{ userSummary.userId }}</el-descriptions-item>
+            <el-descriptions-item label="总训练次数">{{ userSummary.totalSessions || 0 }}</el-descriptions-item>
+            <el-descriptions-item label="总组数">{{ userSummary.totalSets || 0 }}</el-descriptions-item>
+            <el-descriptions-item label="总次数">{{ userSummary.totalReps || 0 }}</el-descriptions-item>
+            <el-descriptions-item label="总时长">{{ userSummary.totalDurationMin || 0 }} 分钟</el-descriptions-item>
+            <el-descriptions-item label="最高训练量">{{ userSummary.peakVolumeKg || 0 }} kg</el-descriptions-item>
+            <el-descriptions-item label="最近训练">{{ parseTime(userSummary.latestTrainingTime) || '-' }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+        <el-card shadow="never">
+          <template #header><span>个性化生成依据</span></template>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="算法版本">{{ userSummary.algorithmVersion || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="生成用户">{{ userSummary.generatedForUserId || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="近7天训练">{{ userSummary.generationBasis?.sessionsLast7Days || 0 }} 次</el-descriptions-item>
+            <el-descriptions-item label="近30天训练">{{ userSummary.generationBasis?.sessionsLast30Days || 0 }} 次</el-descriptions-item>
+            <el-descriptions-item label="今日已完成组数">{{ userSummary.generationBasis?.completedSetsToday || 0 }} 组</el-descriptions-item>
+            <el-descriptions-item label="用户种子">{{ userSummary.generationBasis?.userSeed ?? '-' }}</el-descriptions-item>
+            <el-descriptions-item label="设备/动作类型">{{ userSummary.generationBasis?.deviceType || '-' }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+      </template>
+      <el-empty v-else description="请输入用户ID后查看摘要" />
+    </el-drawer>
   </div>
 </template>
 
 <script setup name="IoTTrainingSession">
 import { Loading } from '@element-plus/icons-vue'
-import { listTrainingSession, getTrainingSession } from "@/api/iot/trainingSession"
+import { listTrainingSession, getTrainingSession, getUserTrainingSummary } from "@/api/iot/trainingSession"
 
 const router = useRouter()
 const route = useRoute()
@@ -142,6 +180,9 @@ const dateRange = ref([])
 const detailOpen = ref(false)
 const detailLoading = ref(false)
 const currentDetail = ref(null)
+const summaryOpen = ref(false)
+const summaryLoading = ref(false)
+const userSummary = ref(null)
 
 const data = reactive({
   queryParams: {
@@ -199,6 +240,22 @@ function handleView(row) {
     detailLoading.value = false
   }).catch(() => {
     detailLoading.value = false
+  })
+}
+
+function handleUserSummary() {
+  if (!queryParams.value.userId) {
+    proxy.$modal.msgWarning('请先输入用户ID')
+    return
+  }
+  summaryOpen.value = true
+  summaryLoading.value = true
+  userSummary.value = null
+  getUserTrainingSummary(queryParams.value.userId).then(res => {
+    userSummary.value = res.data
+    summaryLoading.value = false
+  }).catch(() => {
+    summaryLoading.value = false
   })
 }
 

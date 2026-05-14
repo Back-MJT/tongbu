@@ -6,6 +6,8 @@ package com.ruoyi.iot.domain.model;
 public class EquipmentResolveResult
 {
     private Long equipmentId;
+    private Long venueId;
+    private String venueName;
     private String equipmentCode;
     private String equipmentName;
     private String equipmentType;
@@ -25,6 +27,26 @@ public class EquipmentResolveResult
     public void setEquipmentId(Long equipmentId)
     {
         this.equipmentId = equipmentId;
+    }
+
+    public Long getVenueId()
+    {
+        return venueId;
+    }
+
+    public void setVenueId(Long venueId)
+    {
+        this.venueId = venueId;
+    }
+
+    public String getVenueName()
+    {
+        return venueName;
+    }
+
+    public void setVenueName(String venueName)
+    {
+        this.venueName = venueName;
     }
 
     public String getEquipmentCode()

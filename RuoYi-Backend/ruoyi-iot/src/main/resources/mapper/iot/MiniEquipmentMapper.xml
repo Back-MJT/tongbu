@@ -33,7 +33,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
                e.location,
                d.device_id,
                d.device_code,
-               d.bluetooth_name,
+               COALESCE(NULLIF(d.bluetooth_name, ''), e.bluetooth_name) AS bluetooth_name,
                d.service_uuid,
                d.notify_char_uuid,
                cfg.main_axis,

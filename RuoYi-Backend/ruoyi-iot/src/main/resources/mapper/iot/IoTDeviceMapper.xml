@@ -47,6 +47,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <if test="deviceName != null and deviceName != ''">
             AND d.device_name LIKE CONCAT('%', #{deviceName}, '%')
         </if>
+        <if test="bluetoothName != null and bluetoothName != ''">
+            AND d.bluetooth_name LIKE CONCAT('%', #{bluetoothName}, '%')
+        </if>
         <if test="deviceType != null and deviceType != ''">
             AND d.device_type = #{deviceType}
         </if>
@@ -81,6 +84,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     <select id="selectDeviceByCodeRaw" parameterType="String" resultMap="IoTDeviceResult">
         <include refid="selectDeviceVo"/>
         WHERE d.device_code = #{deviceCode}
+    </select>
+
+    <select id="selectDeviceByBluetoothName" resultMap="IoTDeviceResult">
+        <include refid="selectDeviceVo"/>
+        WHERE d.bluetooth_name = #{bluetoothName}
+          AND d.del_flag = '0'
+          AND d.tenant_id = #{tenantId}
+        LIMIT 1
     </select>
 
     <insert id="insertDevice" parameterType="com.ruoyi.iot.domain.entity.IoTDevice" useGeneratedKeys="true" keyProperty="deviceId">

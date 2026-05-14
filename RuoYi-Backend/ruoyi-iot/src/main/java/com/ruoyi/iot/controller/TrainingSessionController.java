@@ -38,4 +38,11 @@ public class TrainingSessionController extends BaseController
     {
         return success(trainingSessionService.selectTrainingSessionDetail(sessionId));
     }
+
+    @PreAuthorize("@ss.hasPermi('iot:training:query')")
+    @GetMapping("/user-summary/{userId}")
+    public AjaxResult getUserSummary(@PathVariable Long userId)
+    {
+        return success(trainingSessionService.selectUserTrainingSummary(userId));
+    }
 }

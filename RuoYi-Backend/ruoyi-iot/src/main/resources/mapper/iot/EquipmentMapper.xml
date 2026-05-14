@@ -27,9 +27,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <sql id="selectEquipmentVo">
         SELECT e.equipment_id, e.equipment_code, e.equipment_name, e.equipment_type,
-               e.location, e.qr_content, e.bluetooth_name, e.tenant_id, e.status, e.del_flag,
+               e.location, e.qr_content, COALESCE(NULLIF(d.bluetooth_name, ''), e.bluetooth_name) AS bluetooth_name,
+               e.tenant_id, e.status, e.del_flag,
                e.create_by, e.create_time, e.update_by, e.update_time, e.remark,
-               d.device_id, d.device_code, d.device_name
+               COALESCE(d.device_id, e.device_id) AS device_id,
+               COALESCE(NULLIF(d.device_code, ''), e.device_code) AS device_code,
+               d.device_name
         FROM xd_equipment e
         LEFT JOIN xd_equipment_device ed
                ON ed.equipment_id = e.equipment_id
@@ -92,13 +95,69 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="equipmentType != null">equipment_type = #{equipmentType},</if>
             <if test="location != null">location = #{location},</if>
             <if test="qrContent != null">qr_content = #{qrContent},</if>
-            <if test="bluetoothName != null">bluetooth_name = #{bluetoothName},</if>
+            bluetooth_name = #{bluetoothName},
             <if test="status != null">status = #{status},</if>
             <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
             <if test="updateTime != null">update_time = #{updateTime},</if>
             <if test="remark != null">remark = #{remark},</if>
         </set>
         WHERE equipment_id = #{equipmentId} AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="deactivateEquipmentDeviceBindings">
+        UPDATE xd_equipment_device
+        SET status = 'inactive',
+            del_flag = '2',
+            unbind_time = NOW(),
+            update_by = #{updateBy},
+            update_time = NOW()
+        WHERE equipment_id = #{equipmentId}
+          AND tenant_id = #{tenantId}
+          AND status = 'active'
+          AND del_flag = '0'
+    </update>
+
+    <update id="deactivateDeviceBindings">
+        UPDATE xd_equipment_device
+        SET status = 'inactive',
+            del_flag = '2',
+            unbind_time = NOW(),
+            update_by = #{updateBy},
+            update_time = NOW()
+        WHERE device_id = #{deviceId}
+          AND tenant_id = #{tenantId}
+          AND status = 'active'
+          AND del_flag = '0'
+    </update>
+
+    <insert id="insertEquipmentDeviceBinding">
+        INSERT INTO xd_equipment_device (
+            equipment_id, device_id, tenant_id, status, create_by, create_time, remark
+        ) VALUES (
+            #{equipmentId}, #{deviceId}, #{tenantId}, 'active', #{createBy}, NOW(), '管理端绑定'
+        )
+    </insert>
+
+    <update id="updateEquipmentSensorFields">
+        UPDATE xd_equipment
+        SET device_id = #{deviceId},
+            device_code = #{deviceCode},
+            bluetooth_name = #{bluetoothName},
+            update_by = #{updateBy},
+            update_time = NOW()
+        WHERE equipment_id = #{equipmentId}
+          AND tenant_id = #{tenantId}
+    </update>
+
+    <update id="clearEquipmentSensorFieldsByDevice">
+        UPDATE xd_equipment
+        SET device_id = NULL,
+            device_code = NULL,
+            bluetooth_name = NULL,
+            update_by = #{updateBy},
+            update_time = NOW()
+        WHERE tenant_id = #{tenantId}
+          AND device_id = #{deviceId}
     </update>
 
     <delete id="deleteEquipmentById" parameterType="com.ruoyi.iot.domain.entity.Equipment">

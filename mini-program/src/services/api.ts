@@ -41,11 +41,13 @@ async function request<T = any>(
     header['Authorization'] = `Bearer ${token}`;
   }
   header['Content-Type'] = header['Content-Type'] || 'application/json';
+  const url = `${baseUrl}${path}`;
 
   try {
     const res = await new Promise<WechatMiniprogram.RequestSuccessCallbackResult>((resolve, reject) => {
+      console.log('[API] Request:', method, url);
       wx.request({
-        url: `${baseUrl}${path}`,
+        url,
         method,
         data,
         header,
@@ -82,8 +84,9 @@ async function request<T = any>(
 
     return result;
   } catch (err: any) {
-    console.error(`[API] Request failed: ${path}`, err);
-    throw new Error(err.message || '网络请求失败');
+    const message = err?.message || err?.errMsg || '网络请求失败';
+    console.error(`[API] Request failed: ${method} ${url}`, err);
+    throw new Error(message);
   }
 }
 
@@ -123,6 +126,44 @@ export async function getMyDevices() {
   return request<DeviceInfo[]>(API_BASE, '/api/device/my');
 }
 
+export async function getCurrentVenue() {
+  if (isDemoMode()) {
+    return { code: 200, data: getDemoData('venue') as VenueInfo };
+  }
+  return request<VenueInfo>(API_BASE, '/api/venue/current');
+}
+
+export async function listVenues() {
+  if (isDemoMode()) {
+    return { code: 200, data: getDemoData('venues') as VenueInfo[] };
+  }
+  return request<VenueInfo[]>(API_BASE, '/api/venue/list');
+}
+
+export async function listVenueEquipment(venueId: number | string) {
+  if (isDemoMode()) {
+    return { code: 200, data: getDemoData('venueEquipment') as VenueEquipment[] };
+  }
+  return request<VenueEquipment[]>(API_BASE, `/api/venue/${venueId}/equipment`);
+}
+
+export async function getMyTrainingStats() {
+  if (isDemoMode()) {
+    return {
+      code: 200,
+      data: {
+        totalSessions: 23,
+        totalSets: 156,
+        totalReps: 1400,
+        totalDurationMin: 920,
+        peakVolumeKg: 80,
+        algorithmVersion: 'XIN-RULE-demo',
+      },
+    };
+  }
+  return request(API_BASE, '/api/user/training-stats');
+}
+
 export async function bindDevice(deviceCode: string, deviceName?: string) {
   return request(API_BASE, '/api/device/bind', {
     method: 'POST',
@@ -131,17 +172,25 @@ export async function bindDevice(deviceCode: string, deviceName?: string) {
 }
 
 export async function resolveEquipment(code: string) {
-  const normalizedCode = normalizeScanCode(code);
+  const scanPayload = parseScanPayload(code);
+  const normalizedCode = scanPayload.equipmentCode;
   if (isDemoMode() && (normalizedCode === 'EQ-000001' || String(code || '').includes('EQ-000001'))) {
     return { code: 200, data: getDemoEquipmentResolve() as EquipmentResolveResult };
   }
   return request<EquipmentResolveResult>(API_BASE, '/api/mini/equipment/resolve', {
     method: 'GET',
-    data: { code: normalizedCode },
+    data: {
+      code: normalizedCode,
+      ...(scanPayload.venueId ? { venueId: scanPayload.venueId } : {}),
+    },
   });
 }
 
 export function normalizeScanCode(rawCode: string): string {
+  return parseScanPayload(rawCode).equipmentCode;
+}
+
+export function parseScanPayload(rawCode: string): { equipmentCode: string; venueId?: string } {
   let value = String(rawCode || '').trim();
   try {
     value = decodeURIComponent(value);
@@ -149,6 +198,8 @@ export function normalizeScanCode(rawCode: string): string {
     // Keep raw value when scanned content is not URL encoded.
   }
 
+  let equipmentCode = '';
+  let venueId = '';
   const queryStart = value.indexOf('?');
   if (queryStart >= 0) {
     const query = value.slice(queryStart + 1).split('#')[0];
@@ -157,17 +208,74 @@ export function normalizeScanCode(rawCode: string): string {
       const [key, ...rest] = param.split('=');
       const normalizedKey = String(key || '').toLowerCase();
       if (['code', 'equipmentcode', 'equipment_code'].includes(normalizedKey)) {
-        return rest.join('=').trim();
+        equipmentCode = rest.join('=').trim();
+      }
+      if (['venueid', 'venue_id', 'groupid', 'group_id'].includes(normalizedKey)) {
+        venueId = rest.join('=').trim();
       }
     }
   }
 
   const directMatch = value.match(/(?:equipmentCode|equipment_code|code)=([^&#]+)/i);
   if (directMatch?.[1]) {
-    return directMatch[1].trim();
+    equipmentCode = directMatch[1].trim();
+  }
+  const venueMatch = value.match(/(?:venueId|venue_id|groupId|group_id)=([^&#]+)/i);
+  if (venueMatch?.[1]) {
+    venueId = venueMatch[1].trim();
   }
 
-  return value.split('#')[0].trim();
+  return {
+    equipmentCode: equipmentCode || value.split('#')[0].trim(),
+    ...(venueId ? { venueId } : {}),
+  };
+}
+
+export async function occupyEquipment(payload: {
+  equipmentCode: string;
+  venueId?: number | string;
+  taskId?: string | number;
+}) {
+  if (isDemoMode()) {
+    return {
+      code: 200,
+      data: {
+        usageSessionId: `demo-${Date.now()}`,
+        status: 'occupied',
+        expiresInSeconds: 90,
+      },
+    };
+  }
+  return request<EquipmentOccupancy>(API_BASE, '/api/training/equipment/occupy', {
+    method: 'POST',
+    data: payload,
+  });
+}
+
+export async function heartbeatEquipment(payload: {
+  equipmentCode: string;
+  usageSessionId: string;
+}) {
+  if (isDemoMode()) {
+    return { code: 200, data: { status: 'active' } };
+  }
+  return request(API_BASE, '/api/training/equipment/heartbeat', {
+    method: 'POST',
+    data: payload,
+  });
+}
+
+export async function releaseEquipment(payload: {
+  equipmentCode: string;
+  usageSessionId: string;
+}) {
+  if (isDemoMode()) {
+    return { code: 200, data: { status: 'released' } };
+  }
+  return request(API_BASE, '/api/training/equipment/release', {
+    method: 'POST',
+    data: payload,
+  });
 }
 
 export async function unbindDevice(bindingId: number) {
@@ -260,6 +368,7 @@ export async function getSessionDetail(sessionId: number) {
 export async function submitTrainingSession(payload: {
   equipmentCode?: string;
   deviceCode?: string;
+  usageSessionId?: string;
   exerciseType?: string;
   taskId?: string | number;
   exerciseName?: string;
@@ -418,6 +527,10 @@ export interface MiniProgramTask {
   taskId: number;
   exerciseName: string;
   exerciseType: string;
+  equipmentCode?: string;
+  equipmentName?: string;
+  equipmentType?: string;
+  equipmentCategory?: string;
   targetSets: number;
   targetReps: number;
   targetLoadKg: number;
@@ -478,6 +591,8 @@ export interface DeviceTasksResponse {
 
 export interface EquipmentResolveResult {
   equipmentId: number;
+  venueId?: number;
+  venueName?: string;
   equipmentCode: string;
   equipmentName: string;
   equipmentType: string;
@@ -497,11 +612,44 @@ export interface EquipmentResolveResult {
   };
 }
 
+export interface EquipmentOccupancy {
+  usageSessionId: string;
+  status: string;
+  expiresInSeconds?: number;
+  venueId?: number | string;
+  equipmentCode?: string;
+  deviceCode?: string;
+  bluetoothName?: string;
+  equipment?: EquipmentResolveResult;
+}
+
+export interface VenueInfo {
+  venueId?: number;
+  venueName: string;
+  manufacturerName?: string;
+  description?: string;
+  deviceCount?: number;
+  status?: string;
+}
+
+export interface VenueEquipment {
+  equipmentId: number;
+  equipmentCode: string;
+  equipmentName: string;
+  equipmentType: string;
+  equipmentCategory?: string;
+  deviceId?: number;
+  deviceCode?: string;
+  bluetoothName?: string;
+}
+
 export async function getMiniprogramPrescription(params: {
   user_id: string;
   age: number;
   gender?: string;
   device_type?: string;
+  venueId?: number | string;
+  venue_id?: number | string;
   resting_hr?: number;
   sessions_last_30_days?: number;
   hypertension?: boolean;
@@ -602,47 +750,63 @@ function getDemoMiniprogramPrescription(): MiniProgramPrescription {
     tasks: [
       {
         taskId: 1,
-        exerciseName: '平板杠铃卧推',
-        exerciseType: 'bench_press',
-        targetSets: 4,
-        targetReps: 10,
-        targetLoadKg: 40,
-        targetHr: null,
-        intensityLabel: '中等',
-        restSeconds: 90,
-        status: 'completed',
-        coachingTip: '注意控制下放速度，胸部充分拉伸后发力推起',
-      },
-      {
-        taskId: 2,
-        exerciseName: '哑铃上斜卧推',
-        exerciseType: 'incline_press',
+        exerciseName: '推胸训练器',
+        exerciseType: 'chest_press',
+        equipmentCode: 'EQ-000001',
+        equipmentName: '推胸训练器',
+        equipmentType: 'chest_press',
+        equipmentCategory: 'strength',
         targetSets: 3,
         targetReps: 12,
-        targetLoadKg: 16,
+        targetLoadKg: 20,
         targetHr: null,
         intensityLabel: '中等',
         restSeconds: 75,
-        status: 'in_progress',
-        coachingTip: '保持上背贴紧凳面，肘部约45度角',
+        status: 'pending',
+        coachingTip: '扫码器械二维码后开始，保持动作轨迹稳定。',
+      },
+      {
+        taskId: 2,
+        exerciseName: '上斜训练器',
+        exerciseType: 'incline_press',
+        equipmentCode: 'EQ-000002',
+        equipmentName: '上斜训练器',
+        equipmentType: 'incline_press',
+        equipmentCategory: 'strength',
+        targetSets: 3,
+        targetReps: 12,
+        targetLoadKg: 20,
+        targetHr: null,
+        intensityLabel: '中等',
+        restSeconds: 75,
+        status: 'pending',
+        coachingTip: '扫码器械二维码后开始，保持动作轨迹稳定。',
       },
       {
         taskId: 3,
-        exerciseName: '高位下拉',
-        exerciseType: 'lat_pulldown',
-        targetSets: 4,
-        targetReps: 10,
-        targetLoadKg: 35,
+        exerciseName: '伸屈腿训练器',
+        exerciseType: 'leg_extension_curl',
+        equipmentCode: 'EQ-000003',
+        equipmentName: '伸屈腿训练器',
+        equipmentType: 'leg_extension_curl',
+        equipmentCategory: 'strength',
+        targetSets: 3,
+        targetReps: 12,
+        targetLoadKg: 15,
         targetHr: null,
-        intensityLabel: '中高',
-        restSeconds: 90,
+        intensityLabel: '中等',
+        restSeconds: 75,
         status: 'pending',
-        coachingTip: '想象用肘部引导下拉，顶峰收缩停留1秒',
+        coachingTip: '扫码器械二维码后开始，保持动作轨迹稳定。',
       },
       {
         taskId: 4,
-        exerciseName: '坐姿划船',
-        exerciseType: 'seated_row',
+        exerciseName: '蹬腿训练器',
+        exerciseType: 'leg_press',
+        equipmentCode: 'EQ-000004',
+        equipmentName: '蹬腿训练器',
+        equipmentType: 'leg_press',
+        equipmentCategory: 'strength',
         targetSets: 3,
         targetReps: 12,
         targetLoadKg: 30,
@@ -650,13 +814,13 @@ function getDemoMiniprogramPrescription(): MiniProgramPrescription {
         intensityLabel: '中等',
         restSeconds: 75,
         status: 'pending',
-        coachingTip: '保持核心收紧，肩胛骨后缩发力',
+        coachingTip: '扫码器械二维码后开始，保持动作轨迹稳定。',
       },
     ],
-    aiSuggestion: '根据本周训练数据，建议今日进行胸背复合训练，组间休息75-90秒。注意保持动作标准，避免借力。',
-    coachingReasoning: '用户处于成长期，近期上肢力量稳定增长。AE算法推荐渐进式负荷增加5%以突破平台期。',
-    exerciseGoal: '渐进式力量提升',
-    exerciseGoalEn: 'Progressive Strength Gain',
+    aiSuggestion: '已根据当前场馆可用器械生成今日力量康复训练，按任务顺序扫码对应器械开始。',
+    coachingReasoning: '根据用户阶段、今日完成情况和当前场馆可用器械自动挑选。',
+    exerciseGoal: '今日场馆器械训练',
+    exerciseGoalEn: 'venue_equipment_plan',
     userStage: 'growth',
     targetHrZone: null,
     healthTips: [
@@ -788,6 +952,30 @@ export function getDemoData(key: string): any {
         lastSeenAt: new Date().toISOString(),
         totalSessions: 23,
       },
+    ],
+    venue: {
+      venueId: 1,
+      venueName: '智能力量站',
+      manufacturerName: '昕动智能',
+      description: '演示场馆',
+      deviceCount: 1,
+      status: 'open',
+    },
+    venues: [
+      {
+        venueId: 1,
+        venueName: '智能力量站',
+        manufacturerName: '昕动智能',
+        description: '演示场馆',
+        deviceCount: 1,
+        status: 'open',
+      },
+    ],
+    venueEquipment: [
+      { equipmentId: 1, equipmentCode: 'EQ-000001', equipmentName: '推胸训练器', equipmentType: 'chest_press', equipmentCategory: 'strength', deviceId: 1, deviceCode: 'HB-3412', bluetoothName: 'gy_ble25t1' },
+      { equipmentId: 2, equipmentCode: 'EQ-000002', equipmentName: '上斜训练器', equipmentType: 'incline_press', equipmentCategory: 'strength', deviceId: 2, deviceCode: 'HB-3413', bluetoothName: 'gy_ble25t2' },
+      { equipmentId: 3, equipmentCode: 'EQ-000003', equipmentName: '伸屈腿训练器', equipmentType: 'leg_extension_curl', equipmentCategory: 'strength', deviceId: 3, deviceCode: 'HB-3414', bluetoothName: 'gy_ble25t3' },
+      { equipmentId: 4, equipmentCode: 'EQ-000004', equipmentName: '蹬腿训练器', equipmentType: 'leg_press', equipmentCategory: 'strength', deviceId: 4, deviceCode: 'HB-3415', bluetoothName: 'gy_ble25t4' },
     ],
     todayProgress: {
       date: new Date().toISOString().split('T')[0],

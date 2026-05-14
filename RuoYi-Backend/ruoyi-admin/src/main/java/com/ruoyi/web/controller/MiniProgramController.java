@@ -2,8 +2,10 @@ package com.ruoyi.web.controller;
 
 import java.time.LocalDate;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSON;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,14 +23,21 @@ import com.ruoyi.common.core.controller.BaseController;
 import com.ruoyi.common.core.domain.AjaxResult;
 import com.ruoyi.common.core.domain.model.LoginUser;
 import com.ruoyi.common.core.redis.RedisCache;
+import com.ruoyi.common.tenant.TenantContextHolder;
 import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.framework.web.service.SysLoginService;
 import com.ruoyi.framework.web.service.TokenService;
 import com.ruoyi.common.core.domain.entity.SysUser;
 import com.ruoyi.system.service.ISysUserService;
+import com.ruoyi.iot.domain.entity.DeviceGroup;
+import com.ruoyi.iot.domain.entity.Equipment;
 import com.ruoyi.iot.domain.model.EquipmentResolveResult;
+import com.ruoyi.iot.service.IDeviceGroupService;
+import com.ruoyi.iot.service.IEquipmentService;
 import com.ruoyi.iot.service.IMiniEquipmentService;
 import com.ruoyi.intervention.service.impl.MiniProgramServiceImpl;
+import com.ruoyi.intervention.entity.IntervPrescription;
+import com.ruoyi.intervention.mapper.IntervPrescriptionMapper;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -59,6 +68,8 @@ public class MiniProgramController extends BaseController
     private static final String DEMO_TOKEN = "mp_demo_token_2026";
     private static final Long   DEMO_TENANT_ID = 1L;
     private static final String DEMO_USER_ID   = "mp_demo_001";
+    private static final int EQUIPMENT_OCCUPANCY_TTL_SECONDS = 90;
+    private static final String EQUIPMENT_OCCUPANCY_PREFIX = "xindong:equipment:occupancy:";
 
     // ─── Spring Dependencies ──────────────────────────────────────────────────────
 
@@ -82,6 +93,15 @@ public class MiniProgramController extends BaseController
 
     @Autowired
     private IMiniEquipmentService miniEquipmentService;
+
+    @Autowired
+    private IDeviceGroupService deviceGroupService;
+
+    @Autowired
+    private IEquipmentService equipmentService;
+
+    @Autowired
+    private IntervPrescriptionMapper prescriptionMapper;
 
     @Value("${ruoyi.intervention.engine-url:http://localhost:4001}")
     private String ieBaseUrl;
@@ -247,6 +267,31 @@ public class MiniProgramController extends BaseController
         return AjaxResult.success(buildMpUserInfo(sysUser));
     }
 
+    /**
+     * 获取当前用户真实训练统计
+     * GET /api/user/training-stats
+     */
+    @GetMapping("/user/training-stats")
+    public AjaxResult getCurrentUserTrainingStats(
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) return AjaxResult.error(401, "未登录");
+
+        if (ctx.isDemo) {
+            Map<String, Object> demo = new LinkedHashMap<>();
+            demo.put("userId", DEMO_USER_ID);
+            demo.put("totalSessions", 23);
+            demo.put("totalSets", 156);
+            demo.put("totalReps", 1400);
+            demo.put("totalDurationMin", 920);
+            demo.put("peakVolumeKg", 80);
+            demo.put("algorithmVersion", "XIN-RULE-demo");
+            return AjaxResult.success(demo);
+        }
+
+        return AjaxResult.success(miniProgramService.getUserTrainingStats(ctx.userId, ctx.tenantId));
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // Device / 设备
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -258,7 +303,8 @@ public class MiniProgramController extends BaseController
     @GetMapping("/mini/equipment/resolve")
     public AjaxResult resolveEquipment(
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @RequestParam("code") String code) {
+            @RequestParam("code") String code,
+            @RequestParam(value = "venueId", required = false) Long venueId) {
         if (StringUtils.isEmpty(code)) {
             return AjaxResult.error("器械编码不能为空");
         }
@@ -297,15 +343,125 @@ public class MiniProgramController extends BaseController
         }
 
         try {
+            Long qrVenueId = venueId != null ? venueId : extractLongParam(code, "venueId", "venue_id", "groupId", "group_id");
             EquipmentResolveResult result = miniEquipmentService.resolveEquipment(code, ctx.tenantId);
             if (result == null) {
                 return AjaxResult.error("未找到器械或器械未绑定 IMU");
+            }
+            if (qrVenueId != null) {
+                if (!isEquipmentInVenue(qrVenueId, result.getDeviceId())) {
+                    return AjaxResult.error("该器械不属于二维码指定场馆，请联系管理员检查二维码");
+                }
+                result.setVenueId(qrVenueId);
+                result.setVenueName(resolveVenueName(qrVenueId, ctx.tenantId));
             }
             return AjaxResult.success(result);
         } catch (Exception e) {
             log.error("resolveEquipment failed: code={}, tenantId={}: {}", code, ctx.tenantId, e.getMessage());
             return AjaxResult.error("器械解析失败");
         }
+    }
+
+    /**
+     * 占用器械后才允许小程序连接该器械 BLE 传感器。
+     * POST /api/training/equipment/occupy
+     */
+    @PostMapping("/training/equipment/occupy")
+    public AjaxResult occupyEquipment(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody Map<String, Object> body) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) return AjaxResult.error(401, "未登录");
+
+        String equipmentCode = stringValue(firstPresent(body, "equipmentCode", "equipment_code"), null);
+        Long venueId = longValue(firstPresent(body, "venueId", "venue_id"), null);
+        if (StringUtils.isEmpty(equipmentCode)) {
+            return AjaxResult.error("器械编号不能为空");
+        }
+
+        if (ctx.isDemo) {
+            Map<String, Object> demo = new LinkedHashMap<>();
+            demo.put("usageSessionId", "demo-" + System.currentTimeMillis());
+            demo.put("status", "occupied");
+            demo.put("expiresInSeconds", EQUIPMENT_OCCUPANCY_TTL_SECONDS);
+            return AjaxResult.success("器械已占用", demo);
+        }
+
+        EquipmentResolveResult equipment = miniEquipmentService.resolveEquipment(equipmentCode, ctx.tenantId);
+        if (equipment == null || equipment.getDeviceId() == null || StringUtils.isEmpty(equipment.getDeviceCode())) {
+            return AjaxResult.error("器械不存在或未绑定蓝牙传感器");
+        }
+        if (venueId != null && !isEquipmentInVenue(venueId, equipment.getDeviceId())) {
+            return AjaxResult.error("该器械不属于当前场馆，请重新扫码");
+        }
+
+        String key = occupancyKey(ctx.tenantId, equipment.getEquipmentCode());
+        Map<String, Object> existing = redisCache.getCacheObject(key);
+        if (isOwnedBy(existing, ctx.userId)) {
+            existing.put("heartbeatAt", System.currentTimeMillis());
+            redisCache.setCacheObject(key, existing, EQUIPMENT_OCCUPANCY_TTL_SECONDS, TimeUnit.SECONDS);
+            return AjaxResult.success("器械占用已续期", buildOccupancyResponse(existing, equipment, venueId));
+        }
+        if (existing != null) {
+            return AjaxResult.error(409, "器械正在使用中，请稍后再试");
+        }
+
+        Map<String, Object> occupancy = new LinkedHashMap<>();
+        occupancy.put("usageSessionId", UUID.randomUUID().toString());
+        occupancy.put("tenantId", ctx.tenantId);
+        occupancy.put("userId", ctx.userId);
+        occupancy.put("venueId", venueId);
+        occupancy.put("equipmentCode", equipment.getEquipmentCode());
+        occupancy.put("equipmentName", equipment.getEquipmentName());
+        occupancy.put("deviceId", equipment.getDeviceId());
+        occupancy.put("deviceCode", equipment.getDeviceCode());
+        occupancy.put("bluetoothName", equipment.getBluetoothName());
+        occupancy.put("startedAt", System.currentTimeMillis());
+        occupancy.put("heartbeatAt", System.currentTimeMillis());
+
+        Boolean locked = redisCache.redisTemplate.opsForValue()
+                .setIfAbsent(key, occupancy, EQUIPMENT_OCCUPANCY_TTL_SECONDS, TimeUnit.SECONDS);
+        if (!Boolean.TRUE.equals(locked)) {
+            return AjaxResult.error(409, "器械正在使用中，请稍后再试");
+        }
+        return AjaxResult.success("器械已占用", buildOccupancyResponse(occupancy, equipment, venueId));
+    }
+
+    @PostMapping("/training/equipment/heartbeat")
+    public AjaxResult heartbeatEquipment(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody Map<String, Object> body) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) return AjaxResult.error(401, "未登录");
+        if (ctx.isDemo) return AjaxResult.success("心跳成功", Map.of("status", "active"));
+
+        String equipmentCode = stringValue(firstPresent(body, "equipmentCode", "equipment_code"), null);
+        String usageSessionId = stringValue(firstPresent(body, "usageSessionId", "usage_session_id"), null);
+        Map<String, Object> occupancy = getOwnedOccupancy(ctx, equipmentCode, usageSessionId);
+        if (occupancy == null) {
+            return AjaxResult.error(409, "器械占用已失效，请重新扫码连接");
+        }
+        occupancy.put("heartbeatAt", System.currentTimeMillis());
+        redisCache.setCacheObject(occupancyKey(ctx.tenantId, equipmentCode), occupancy,
+                EQUIPMENT_OCCUPANCY_TTL_SECONDS, TimeUnit.SECONDS);
+        return AjaxResult.success("心跳成功", Map.of("status", "active", "expiresInSeconds", EQUIPMENT_OCCUPANCY_TTL_SECONDS));
+    }
+
+    @PostMapping("/training/equipment/release")
+    public AjaxResult releaseEquipment(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody Map<String, Object> body) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) return AjaxResult.error(401, "未登录");
+        if (ctx.isDemo) return AjaxResult.success("器械已释放", Map.of("status", "released"));
+
+        String equipmentCode = stringValue(firstPresent(body, "equipmentCode", "equipment_code"), null);
+        String usageSessionId = stringValue(firstPresent(body, "usageSessionId", "usage_session_id"), null);
+        Map<String, Object> occupancy = getOwnedOccupancy(ctx, equipmentCode, usageSessionId);
+        if (occupancy != null) {
+            redisCache.deleteObject(occupancyKey(ctx.tenantId, equipmentCode));
+        }
+        return AjaxResult.success("器械已释放", Map.of("status", "released"));
     }
 
     /**
@@ -345,6 +501,128 @@ public class MiniProgramController extends BaseController
         } catch (Exception e) {
             log.error("getMyDevices failed for userId={}: {}", ctx.userId, e.getMessage());
             return AjaxResult.success(Collections.emptyList());
+        }
+    }
+
+    /**
+     * 获取当前场馆/智能力量站
+     * GET /api/venue/current
+     *
+     * <p>小程序首页展示的是场馆，不是单台蓝牙设备。当前复用后台「设备分组」作为场馆管理模型。
+     */
+    @GetMapping("/venue/current")
+    public AjaxResult getCurrentVenue(
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) {
+            return AjaxResult.error(401, "未登录");
+        }
+
+        if (ctx.isDemo) {
+            Map<String, Object> venue = new LinkedHashMap<>();
+            venue.put("venueId", 1);
+            venue.put("venueName", "智能力量站");
+            venue.put("description", "演示场馆");
+            venue.put("deviceCount", 1);
+            venue.put("status", "open");
+            return AjaxResult.success(venue);
+        }
+
+        try {
+            DeviceGroup query = new DeviceGroup();
+            query.setTenantId(ctx.tenantId);
+            List<DeviceGroup> groups = deviceGroupService.selectDeviceGroupList(query);
+            if (groups == null || groups.isEmpty()) {
+                Map<String, Object> fallback = new LinkedHashMap<>();
+                fallback.put("venueId", null);
+                fallback.put("venueName", "智能力量站");
+                fallback.put("description", "请在后台设备分组中维护场馆");
+                fallback.put("deviceCount", 0);
+                fallback.put("status", "pending");
+                return AjaxResult.success(fallback);
+            }
+
+            DeviceGroup group = groups.get(0);
+            Map<String, Object> venue = new LinkedHashMap<>();
+            venue.put("venueId", group.getGroupId());
+            venue.put("venueName", group.getGroupName());
+            venue.put("manufacturerName", group.getManufacturerName());
+            venue.put("description", group.getDescription());
+            venue.put("deviceCount", group.getDeviceCount());
+            venue.put("status", "open");
+            return AjaxResult.success(venue);
+        } catch (Exception e) {
+            log.error("getCurrentVenue failed for userId={}: {}", ctx.userId, e.getMessage());
+            return AjaxResult.error("场馆加载失败");
+        }
+    }
+
+    /**
+     * 获取可选择场馆列表
+     * GET /api/venue/list
+     */
+    @GetMapping("/venue/list")
+    public AjaxResult listVenues(
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) {
+            return AjaxResult.error(401, "未登录");
+        }
+
+        if (ctx.isDemo) {
+            List<Map<String, Object>> venues = new ArrayList<>();
+            Map<String, Object> venue = new LinkedHashMap<>();
+            venue.put("venueId", 1);
+            venue.put("venueName", "智能力量站");
+            venue.put("description", "演示场馆");
+            venue.put("deviceCount", 1);
+            venue.put("status", "open");
+            venues.add(venue);
+            return AjaxResult.success(venues);
+        }
+
+        try {
+            DeviceGroup query = new DeviceGroup();
+            query.setTenantId(ctx.tenantId);
+            List<DeviceGroup> groups = deviceGroupService.selectDeviceGroupList(query);
+            List<Map<String, Object>> venues = new ArrayList<>();
+            for (DeviceGroup group : groups) {
+                Map<String, Object> venue = new LinkedHashMap<>();
+                venue.put("venueId", group.getGroupId());
+                venue.put("venueName", group.getGroupName());
+                venue.put("manufacturerName", group.getManufacturerName());
+                venue.put("description", group.getDescription());
+                venue.put("deviceCount", group.getDeviceCount());
+                venue.put("status", "open");
+                venues.add(venue);
+            }
+            return AjaxResult.success(venues);
+        } catch (Exception e) {
+            log.error("listVenues failed for userId={}: {}", ctx.userId, e.getMessage());
+            return AjaxResult.error("场馆列表加载失败");
+        }
+    }
+
+    /**
+     * 获取场馆可扫码训练器械
+     * GET /api/venue/{venueId}/equipment
+     */
+    @GetMapping("/venue/{venueId}/equipment")
+    public AjaxResult listVenueEquipment(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @PathVariable Long venueId) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) {
+            return AjaxResult.error(401, "未登录");
+        }
+        if (ctx.isDemo) {
+            return AjaxResult.success(demoVenueEquipment());
+        }
+        try {
+            return AjaxResult.success(getVenueEquipmentList(venueId, ctx.tenantId));
+        } catch (Exception e) {
+            log.error("listVenueEquipment failed: venueId={}, userId={}: {}", venueId, ctx.userId, e.getMessage());
+            return AjaxResult.error("场馆器械加载失败");
         }
     }
 
@@ -491,7 +769,16 @@ public class MiniProgramController extends BaseController
         AuthContext ctx = resolveAuth(auth);
         if (ctx == null) return AjaxResult.error(401, "未登录");
 
-        // Demo user — proceed to service layer which handles demo fallback
+        if (ctx.isDemo) {
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            fallback.put("records", Collections.emptyList());
+            fallback.put("total", 0);
+            fallback.put("page", page);
+            fallback.put("size", size);
+            fallback.put("userId", DEMO_USER_ID);
+            return AjaxResult.success(fallback);
+        }
+
         try {
             Map<String, Object> result = miniProgramService.getTrainingHistory(
                     ctx.userId, ctx.tenantId, page, size);
@@ -527,34 +814,33 @@ public class MiniProgramController extends BaseController
         AuthContext ctx = resolveAuth(auth);
         if (ctx == null) return AjaxResult.error(401, "未登录");
 
-        String deviceType = body.get("deviceType") != null
-                ? (String) body.get("deviceType") : "strength_station";
-        Integer sessionsLast30Days = body.get("sessionsLast30Days") != null
-                ? ((Number) body.get("sessionsLast30Days")).intValue() : null;
-        Integer restingHr = body.get("restingHr") != null
-                ? ((Number) body.get("restingHr")).intValue() : null;
-        Boolean hypertension = body.get("hypertension") != null
-                ? (Boolean) body.get("hypertension") : false;
+        String deviceType = stringValue(firstPresent(body, "deviceType", "device_type"), "strength_station");
+        Long venueId = longValue(firstPresent(body, "venueId", "venue_id"), null);
 
         int age = ctx.userInfo != null && ctx.userInfo.get("age") != null
                 ? (Integer) ctx.userInfo.get("age") : 30;
 
-        log.info("getPrescription: userId={}, tenantId={}, deviceType={}, sessions={}",
-                 ctx.getUserIdStr(), ctx.tenantId, deviceType, sessionsLast30Days);
+        log.info("getPrescription: rule-generated userId={}, tenantId={}, deviceType={}, venueId={}",
+                 ctx.getUserIdStr(), ctx.tenantId, deviceType, venueId);
 
-        Map<String, Object> prescription = callIePrescription(
-                ctx.getUserIdStr(), age, deviceType,
-                sessionsLast30Days != null ? sessionsLast30Days : 0,
-                restingHr != null ? restingHr : 0,
-                ctx.tenantId,
-                ctx.isDemo);
-
-        if (prescription != null) {
-            return AjaxResult.success(prescription);
+        if (ctx.isDemo) {
+            return AjaxResult.success(applyVenueEquipmentTasks(
+                    buildFallbackPrescription(DEMO_USER_ID, deviceType, age), demoVenueEquipment(), age));
         }
 
-        log.warn("getPrescription: engine unavailable for userId={}, returning fallback", ctx.getUserIdStr());
-        return AjaxResult.success(buildFallbackPrescription(ctx.getUserIdStr(), deviceType, age));
+        Map<String, Object> prescription = buildAdminTrainingPlan(ctx.userId, ctx.tenantId);
+        boolean usesAdminPlan = prescription != null;
+        if (prescription == null) {
+            prescription = miniProgramService.buildRulePrescription(
+                    ctx.userId, ctx.tenantId, deviceType, age);
+        }
+        if (venueId != null && !usesAdminPlan) {
+            List<Map<String, Object>> equipment = getVenueEquipmentList(venueId, ctx.tenantId);
+            if (!equipment.isEmpty()) {
+                prescription = applyVenueEquipmentTasks(prescription, equipment, age);
+            }
+        }
+        return AjaxResult.success(prescription);
     }
 
     /**
@@ -583,15 +869,44 @@ public class MiniProgramController extends BaseController
         String stage = body.get("stage") != null ? (String) body.get("stage") : null;
         String equipmentCode = body.get("equipmentCode") != null ? (String) body.get("equipmentCode") : null;
         String deviceCode = body.get("deviceCode") != null ? (String) body.get("deviceCode") : null;
+        String usageSessionId = body.get("usageSessionId") != null ? String.valueOf(body.get("usageSessionId")) : null;
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> sets = body.get("sets") instanceof List
                 ? (List<Map<String, Object>>) body.get("sets") : Collections.emptyList();
 
+        if (ctx.isDemo) {
+            log.warn("submitSession [demo]: type={}, sets={}, reps={}, duration={}",
+                     exerciseType, completedSets, totalReps, durationMin);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("sessionId", System.currentTimeMillis());
+            result.put("status", "recorded");
+            result.put("savedSets", sets.size());
+            result.put("fallback", true);
+            result.put("userId", DEMO_USER_ID);
+            return AjaxResult.success("训练记录已保存", result);
+        }
+
         try {
+            Long occupiedDeviceId = null;
+            if (!StringUtils.isEmpty(equipmentCode)) {
+                Map<String, Object> occupancy = getOwnedOccupancy(ctx, equipmentCode, usageSessionId);
+                if (occupancy == null) {
+                    return AjaxResult.error(409, "器械占用已失效，请重新扫码连接");
+                }
+                occupiedDeviceId = longValue(occupancy.get("deviceId"), null);
+                String occupiedDeviceCode = stringValue(occupancy.get("deviceCode"), null);
+                if (!StringUtils.isEmpty(occupiedDeviceCode) && !StringUtils.isEmpty(deviceCode)
+                        && !occupiedDeviceCode.equals(deviceCode)) {
+                    return AjaxResult.error("训练传感器与占用器械不一致，请重新扫码");
+                }
+            }
             Map<String, Object> result = miniProgramService.submitSession(
-                    ctx.userId, ctx.tenantId,
+                    ctx.userId, ctx.tenantId, occupiedDeviceId,
                     equipmentCode, deviceCode, exerciseType,
                     completedSets, totalReps, totalVolume, durationMin, stage, sets);
+            if (!StringUtils.isEmpty(equipmentCode)) {
+                redisCache.deleteObject(occupancyKey(ctx.tenantId, equipmentCode));
+            }
             log.info("submitSession: userId={}, tenantId={}, type={}, sets={}, reps={}",
                      ctx.userId, ctx.tenantId, exerciseType, completedSets, totalReps);
             return AjaxResult.success("训练记录已保存", result);
@@ -669,6 +984,53 @@ public class MiniProgramController extends BaseController
         return null;
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> buildAdminTrainingPlan(Long userId, Long tenantId) {
+        IntervPrescription active = prescriptionMapper.selectLatestByUserId(String.valueOf(userId), tenantId);
+        if (active == null || StringUtils.isEmpty(active.getRecommendations())) {
+            return null;
+        }
+        try {
+            Map<String, Object> source = JSON.parseObject(active.getRecommendations(), Map.class);
+            Object tasks = source.get("tasks");
+            if (!(tasks instanceof List<?>)) {
+                return null;
+            }
+            int plannedSets = 0;
+            for (Object item : (List<?>) tasks) {
+                if (item instanceof Map<?, ?> task) {
+                    Object targetSets = task.get("targetSets");
+                    plannedSets += targetSets instanceof Number ? ((Number) targetSets).intValue() : 1;
+                }
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("date", LocalDate.now().toString());
+            result.put("plannedSessions", plannedSets);
+            result.put("completedSessions", 0);
+            result.put("totalDurationMin", 0);
+            result.put("totalSets", plannedSets);
+            result.put("totalReps", 0);
+            result.put("complianceRate", 0);
+            result.put("tasks", tasks);
+            result.put("aiSuggestion", "已加载后台为你设定的训练计划，请按任务扫码对应器械开始。");
+            result.put("coachingReasoning", "该计划由后台教练/管理员针对当前用户设定。");
+            result.put("exerciseGoal", "个人训练计划");
+            result.put("exerciseGoalEn", "admin_assigned_plan");
+            result.put("userStage", "assigned");
+            result.put("targetHrZone", null);
+            result.put("healthTips", Collections.emptyList());
+            result.put("algorithmVersion", "XIN-ADMIN-v1");
+            result.put("prescriptionId", active.getPrescriptionId());
+            result.put("generatedForUserId", String.valueOf(userId));
+            result.put("source", "admin");
+            return result;
+        } catch (Exception e) {
+            log.warn("buildAdminTrainingPlan failed: userId={}, prescriptionId={}, error={}",
+                    userId, active.getPrescriptionId(), e.getMessage());
+            return null;
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════════
     // Auth Resolution
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -704,8 +1066,8 @@ public class MiniProgramController extends BaseController
         // Demo token
         if (DEMO_TOKEN.equals(token)) {
             AuthContext ctx = new AuthContext();
-            // Use DEMO_USER_ID string so IE API calls work (IE requires user_id as non-null string)
-            ctx.userId = Long.valueOf(DEMO_USER_ID.replace("mp_demo_", ""));
+            // Demo mode is intentionally not tied to a real sys_user row.
+            ctx.userId = null;
             ctx.tenantId = DEMO_TENANT_ID;
             ctx.isDemo = true;
             ctx.userInfo = DEMO_USERS.get(DEMO_TOKEN);
@@ -938,6 +1300,250 @@ public class MiniProgramController extends BaseController
     private String maskPhone(String phone) {
         if (StringUtils.isEmpty(phone) || phone.length() != 11) return phone;
         return phone.substring(0, 3) + "****" + phone.substring(7);
+    }
+
+    private Object firstPresent(Map<String, Object> body, String... keys) {
+        if (body == null) return null;
+        for (String key : keys) {
+            Object value = body.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String stringValue(Object value, String fallback) {
+        return value != null && !String.valueOf(value).isBlank() ? String.valueOf(value) : fallback;
+    }
+
+    private Long longValue(Object value, Long fallback) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return fallback;
+        }
+        try {
+            return Long.valueOf(String.valueOf(value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private Long extractLongParam(String raw, String... keys) {
+        if (StringUtils.isEmpty(raw)) {
+            return null;
+        }
+        String value = raw.trim();
+        try {
+            value = java.net.URLDecoder.decode(value, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception ignored) {
+        }
+        String lower = value.toLowerCase();
+        for (String key : keys) {
+            String needle = key.toLowerCase() + "=";
+            int idx = lower.indexOf(needle);
+            if (idx < 0) {
+                continue;
+            }
+            String found = value.substring(idx + needle.length());
+            int amp = found.indexOf('&');
+            if (amp >= 0) {
+                found = found.substring(0, amp);
+            }
+            int hash = found.indexOf('#');
+            if (hash >= 0) {
+                found = found.substring(0, hash);
+            }
+            return longValue(found, null);
+        }
+        return null;
+    }
+
+    private String occupancyKey(Long tenantId, String equipmentCode) {
+        return EQUIPMENT_OCCUPANCY_PREFIX + tenantId + ":" + equipmentCode;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getOwnedOccupancy(AuthContext ctx, String equipmentCode, String usageSessionId) {
+        if (StringUtils.isEmpty(equipmentCode)) {
+            return null;
+        }
+        Map<String, Object> occupancy = redisCache.getCacheObject(occupancyKey(ctx.tenantId, equipmentCode));
+        if (!isOwnedBy(occupancy, ctx.userId)) {
+            return null;
+        }
+        String currentSessionId = stringValue(occupancy.get("usageSessionId"), null);
+        if (!StringUtils.isEmpty(usageSessionId) && !usageSessionId.equals(currentSessionId)) {
+            return null;
+        }
+        return occupancy;
+    }
+
+    private boolean isOwnedBy(Map<String, Object> occupancy, Long userId) {
+        if (occupancy == null || userId == null || occupancy.get("userId") == null) {
+            return false;
+        }
+        return String.valueOf(userId).equals(String.valueOf(occupancy.get("userId")));
+    }
+
+    private Map<String, Object> buildOccupancyResponse(Map<String, Object> occupancy,
+                                                       EquipmentResolveResult equipment,
+                                                       Long venueId) {
+        Map<String, Object> result = new LinkedHashMap<>(occupancy);
+        result.put("status", "occupied");
+        result.put("expiresInSeconds", EQUIPMENT_OCCUPANCY_TTL_SECONDS);
+        result.put("venueId", venueId);
+        result.put("equipment", equipment);
+        return result;
+    }
+
+    private boolean isEquipmentInVenue(Long venueId, Long deviceId) {
+        if (venueId == null || deviceId == null) {
+            return false;
+        }
+        List<Long> deviceIds = deviceGroupService.getDeviceIdsByGroupId(venueId);
+        return deviceIds != null && deviceIds.contains(deviceId);
+    }
+
+    private String resolveVenueName(Long venueId, Long tenantId) {
+        if (venueId == null) {
+            return null;
+        }
+        TenantContextHolder.setTenantId(tenantId);
+        try {
+            DeviceGroup group = deviceGroupService.selectDeviceGroupById(venueId);
+            return group != null ? group.getGroupName() : null;
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            TenantContextHolder.clear();
+        }
+    }
+
+    private List<Map<String, Object>> getVenueEquipmentList(Long venueId, Long tenantId) {
+        List<Long> deviceIds = deviceGroupService.getDeviceIdsByGroupId(venueId);
+        if (deviceIds == null || deviceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Set<Long> deviceIdSet = new HashSet<>(deviceIds);
+        Equipment query = new Equipment();
+        query.setStatus("0");
+        List<Equipment> allEquipment;
+        TenantContextHolder.setTenantId(tenantId);
+        try {
+            allEquipment = equipmentService.selectEquipmentList(query);
+        } finally {
+            TenantContextHolder.clear();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Equipment equipment : allEquipment) {
+            if (equipment.getDeviceId() == null || !deviceIdSet.contains(equipment.getDeviceId())) {
+                continue;
+            }
+            result.add(equipmentPayload(equipment));
+        }
+        return result;
+    }
+
+    private Map<String, Object> equipmentPayload(Equipment equipment) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("equipmentId", equipment.getEquipmentId());
+        item.put("equipmentCode", equipment.getEquipmentCode());
+        item.put("equipmentName", equipment.getEquipmentName());
+        item.put("equipmentType", equipment.getEquipmentType());
+        item.put("equipmentCategory", equipmentCategory(equipment.getEquipmentType()));
+        item.put("deviceId", equipment.getDeviceId());
+        item.put("deviceCode", equipment.getDeviceCode());
+        item.put("bluetoothName", equipment.getBluetoothName());
+        return item;
+    }
+
+    private List<Map<String, Object>> demoVenueEquipment() {
+        List<Map<String, Object>> equipment = new ArrayList<>();
+        equipment.add(demoEquipment(1L, "EQ-000001", "推胸训练器", "chest_press", "HB-3412", "gy_ble25t1"));
+        equipment.add(demoEquipment(2L, "EQ-000002", "上斜训练器", "incline_press", "HB-3413", "gy_ble25t2"));
+        equipment.add(demoEquipment(3L, "EQ-000003", "伸屈腿训练器", "leg_extension_curl", "HB-3414", "gy_ble25t3"));
+        equipment.add(demoEquipment(4L, "EQ-000004", "蹬腿训练器", "leg_press", "HB-3415", "gy_ble25t4"));
+        return equipment;
+    }
+
+    private Map<String, Object> demoEquipment(Long id, String code, String name, String type, String deviceCode, String bluetoothName) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("equipmentId", id);
+        item.put("equipmentCode", code);
+        item.put("equipmentName", name);
+        item.put("equipmentType", type);
+        item.put("equipmentCategory", "strength");
+        item.put("deviceId", id);
+        item.put("deviceCode", deviceCode);
+        item.put("bluetoothName", bluetoothName);
+        return item;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> applyVenueEquipmentTasks(Map<String, Object> prescription, List<Map<String, Object>> equipment, int age) {
+        Map<String, Object> result = new LinkedHashMap<>(prescription);
+        List<Map<String, Object>> candidates = equipment.stream()
+                .filter(item -> "strength".equals(item.get("equipmentCategory")))
+                .limit(age >= 60 ? 3 : 4)
+                .toList();
+        if (candidates.isEmpty()) {
+            candidates = equipment.stream().limit(3).toList();
+        }
+
+        List<Map<String, Object>> tasks = new ArrayList<>();
+        int idx = 1;
+        for (Map<String, Object> item : candidates) {
+            String type = stringValue(item.get("equipmentType"), "strength");
+            Map<String, Object> task = new LinkedHashMap<>();
+            task.put("taskId", idx);
+            task.put("exerciseName", item.get("equipmentName"));
+            task.put("exerciseType", type);
+            task.put("equipmentCode", item.get("equipmentCode"));
+            task.put("equipmentName", item.get("equipmentName"));
+            task.put("equipmentType", type);
+            task.put("equipmentCategory", item.get("equipmentCategory"));
+            task.put("targetSets", idx == 1 && age >= 60 ? 2 : 3);
+            task.put("targetReps", age >= 60 ? 10 : 12);
+            task.put("targetLoadKg", defaultLoadForEquipment(type));
+            task.put("targetHr", null);
+            task.put("intensityLabel", age >= 60 ? "低中强度" : "中等强度");
+            task.put("restSeconds", age >= 60 ? 90 : 75);
+            task.put("status", "pending");
+            task.put("coachingTip", "扫码器械二维码后开始，保持动作轨迹稳定。");
+            tasks.add(task);
+            idx++;
+        }
+
+        int plannedSets = tasks.stream().mapToInt(task -> ((Number) task.get("targetSets")).intValue()).sum();
+        result.put("tasks", tasks);
+        result.put("plannedSessions", plannedSets);
+        result.put("totalSets", plannedSets);
+        result.put("aiSuggestion", "已根据当前场馆可用器械生成今日力量康复训练，按任务顺序扫码对应器械开始。");
+        result.put("coachingReasoning", "根据用户阶段、今日完成情况和当前场馆可用器械自动挑选。");
+        result.put("exerciseGoal", "今日场馆器械训练");
+        result.put("exerciseGoalEn", "venue_equipment_plan");
+        result.put("venueEquipmentCount", equipment.size());
+        return result;
+    }
+
+    private String equipmentCategory(String equipmentType) {
+        String type = stringValue(equipmentType, "strength");
+        if (Set.of("treadmill", "rowing", "cycling").contains(type)) {
+            return "cardio";
+        }
+        if (Set.of("body_fat_scale", "body_composition", "scale").contains(type)) {
+            return "body_composition";
+        }
+        return "strength";
+    }
+
+    private double defaultLoadForEquipment(String equipmentType) {
+        return switch (stringValue(equipmentType, "strength")) {
+            case "leg_press", "squat" -> 30.0;
+            case "leg_extension_curl", "shoulder_shrug", "biceps" -> 15.0;
+            case "treadmill", "body_fat_scale", "body_composition" -> 0.0;
+            default -> 20.0;
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

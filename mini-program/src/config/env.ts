@@ -9,8 +9,18 @@
 
 import { localDevConfig } from './local-dev';
 
-// 小程序运行时没有 Node 的 process 对象，本地调试默认走开发/演示环境。
-const ENV = 'development';
+type AppEnv = 'development' | 'staging' | 'production';
+
+function resolveRuntimeEnv(): AppEnv {
+  try {
+    const envVersion = wx.getAccountInfoSync?.().miniProgram?.envVersion;
+    if (envVersion === 'trial') return 'staging';
+    if (envVersion === 'release') return 'production';
+  } catch {}
+  return 'development';
+}
+
+const ENV = resolveRuntimeEnv();
 
 interface EnvConfig {
   apiBase: string;      // RuoYi后端统一入口
@@ -23,27 +33,27 @@ interface EnvConfig {
 
 const configs: Record<string, EnvConfig> = {
   development: {
-    apiBase: localDevConfig.apiBase,
-    ieBase: localDevConfig.ieBase,
-    wsUrl: localDevConfig.wsUrl,
+    apiBase: 'https://api.black-mjt.cn',
+    ieBase: 'https://api.black-mjt.cn',
+    wsUrl: 'wss://api.black-mjt.cn/ws',
     demoMode: false,
     version: '1.0.0-dev',
     logLevel: 'debug',
   },
   staging: {
-    apiBase: 'http://192.168.1.100:8080',
-    ieBase: 'http://192.168.1.100:8080',
-    wsUrl: 'ws://192.168.1.100:8080/ws',
-    demoMode: true,
+    apiBase: 'https://api.black-mjt.cn',
+    ieBase: 'https://api.black-mjt.cn',
+    wsUrl: 'wss://api.black-mjt.cn/ws',
+    demoMode: false,
     version: '1.0.0-rc',
     logLevel: 'info',
   },
   production: {
     // 生产环境使用微信小程序合法域名
     // 需在微信公众平台配置: request合法域名
-    apiBase: 'https://api.xindong.health',
-    ieBase: 'https://api.xindong.health',
-    wsUrl: 'wss://api.xindong.health/ws',
+    apiBase: 'https://api.black-mjt.cn',
+    ieBase: 'https://api.black-mjt.cn',
+    wsUrl: 'wss://api.black-mjt.cn/ws',
     demoMode: false,
     version: '1.0.0',
     logLevel: 'warn',

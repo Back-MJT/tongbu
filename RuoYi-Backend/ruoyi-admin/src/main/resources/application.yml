@@ -18,8 +18,8 @@ ruoyi:
 # 生产部署请通过环境变量配置真实值。
 wechat:
   miniapp:
-    appid: wx0f6771930750631d
-    secret: 986011d67e5305e7dde4ca369630a09d
+    appid: ${WECHAT_APPID:wx71e4f887a62bccaa}
+    secret: ${WECHAT_SECRET:}
 
 # 开发环境配置
 server:

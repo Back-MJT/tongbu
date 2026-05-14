@@ -53,6 +53,29 @@
         ORDER BY session_time DESC
     </select>
 
+    <select id="selectSinceByUserId" resultMap="IntervSessionMap">
+        SELECT * FROM interv_session
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND session_date &gt;= #{date}
+          AND del_flag = '0'
+        ORDER BY session_time DESC
+    </select>
+
+    <select id="selectUserTrainingStats" resultType="map">
+        SELECT
+            COUNT(*) AS totalSessions,
+            COALESCE(SUM(completed_sets), 0) AS totalSets,
+            COALESCE(SUM(total_reps), 0) AS totalReps,
+            COALESCE(SUM(duration_minutes), 0) AS totalDurationMin,
+            COALESCE(MAX(total_volume_kg), 0) AS peakVolumeKg,
+            MAX(session_time) AS latestTrainingTime
+        FROM interv_session
+        WHERE user_id = #{userId}
+          AND tenant_id = #{tenantId}
+          AND del_flag = '0'
+    </select>
+
     <select id="selectByPrescriptionId" resultMap="IntervSessionMap">
         SELECT * FROM interv_session
         WHERE prescription_id = #{prescriptionId}

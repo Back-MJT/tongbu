@@ -2,11 +2,14 @@
   <div class="app-container">
     <!-- 搜索表单 -->
     <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
-      <el-form-item label="设备名称" prop="deviceName">
-        <el-input v-model="queryParams.deviceName" placeholder="请输入设备名称" clearable style="width: 200px" @keyup.enter="handleQuery" />
+      <el-form-item label="传感器名称" prop="deviceName">
+        <el-input v-model="queryParams.deviceName" placeholder="请输入传感器名称" clearable style="width: 200px" @keyup.enter="handleQuery" />
       </el-form-item>
-      <el-form-item label="设备编号" prop="deviceCode">
-        <el-input v-model="queryParams.deviceCode" placeholder="请输入设备编号" clearable style="width: 200px" @keyup.enter="handleQuery" />
+      <el-form-item label="传感器编号" prop="deviceCode">
+        <el-input v-model="queryParams.deviceCode" placeholder="如 HB-3412" clearable style="width: 200px" @keyup.enter="handleQuery" />
+      </el-form-item>
+      <el-form-item label="蓝牙广播名" prop="bluetoothName">
+        <el-input v-model="queryParams.bluetoothName" placeholder="如 gy_ble25t1" clearable style="width: 200px" @keyup.enter="handleQuery" />
       </el-form-item>
       <el-form-item label="设备类型" prop="deviceType">
         <el-select v-model="queryParams.deviceType" placeholder="请选择" clearable style="width: 200px">
@@ -46,12 +49,13 @@
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList"></right-toolbar>
     </el-row>
 
-    <!-- 设备列表 -->
+    <!-- 传感器列表 -->
     <el-table v-loading="loading" :data="deviceList" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" align="center" />
-      <el-table-column label="设备编号" align="center" key="deviceId" prop="deviceId" width="80" />
-      <el-table-column label="设备名称" align="center" key="deviceName" prop="deviceName" :show-overflow-tooltip="true" />
-      <el-table-column label="设备编号(MAC)" align="center" key="deviceCode" prop="deviceCode" :show-overflow-tooltip="true" />
+      <el-table-column label="ID" align="center" key="deviceId" prop="deviceId" width="80" />
+      <el-table-column label="传感器名称" align="center" key="deviceName" prop="deviceName" :show-overflow-tooltip="true" />
+      <el-table-column label="传感器编号" align="center" key="deviceCode" prop="deviceCode" :show-overflow-tooltip="true" />
+      <el-table-column label="蓝牙广播名" align="center" key="bluetoothName" prop="bluetoothName" min-width="150" :show-overflow-tooltip="true" />
       <el-table-column label="设备类型" align="center" key="deviceType" prop="deviceType" width="140">
         <template #default="scope">
           <el-tag v-if="scope.row.deviceType">{{ dictType[scope.row.deviceType] || scope.row.deviceType }}</el-tag>
@@ -87,25 +91,25 @@
 
     <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
-    <!-- 添加或修改设备对话框 -->
+    <!-- 添加或修改传感器对话框 -->
     <el-dialog :title="title" v-model="open" width="600px" append-to-body>
       <el-form :model="form" :rules="rules" ref="deviceRef" label-width="100px">
         <el-row>
           <el-col :span="12">
-            <el-form-item label="设备名称" prop="deviceName">
-              <el-input v-model="form.deviceName" placeholder="请输入设备名称" maxlength="64" />
+            <el-form-item label="传感器名称" prop="deviceName">
+              <el-input v-model="form.deviceName" placeholder="请输入传感器名称" maxlength="64" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="设备编号" prop="deviceCode">
-              <el-input v-model="form.deviceCode" placeholder="MAC地址或IMEI" maxlength="64" />
+            <el-form-item label="传感器编号" prop="deviceCode">
+              <el-input v-model="form.deviceCode" placeholder="如 HB-3412" maxlength="64" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row>
           <el-col :span="12">
             <el-form-item label="设备类型" prop="deviceType">
-              <el-select v-model="form.deviceType" placeholder="请选择" style="width: 100%">
+              <el-select v-model="form.deviceType" placeholder="可不选" clearable style="width: 100%">
                 <el-option v-for="dict in iot_device_type" :key="dict.value" :label="dict.label" :value="dict.value" />
               </el-select>
             </el-form-item>
@@ -123,7 +127,7 @@
         <el-row>
           <el-col :span="12">
             <el-form-item label="所属厂商" prop="manufacturerId">
-              <el-select v-model="form.manufacturerId" placeholder="请选择厂商" style="width: 100%">
+              <el-select v-model="form.manufacturerId" placeholder="可不选" clearable style="width: 100%">
                 <el-option v-for="m in manufacturerOptions" :key="m.manufacturerId" :label="m.manufacturerName" :value="m.manufacturerId" />
               </el-select>
             </el-form-item>
@@ -135,6 +139,23 @@
           </el-col>
         </el-row>
         <el-row>
+          <el-col :span="12">
+            <el-form-item label="蓝牙广播名" prop="bluetoothName">
+              <el-input v-model="form.bluetoothName" placeholder="如 gy_ble25t1" maxlength="100" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="服务UUID" prop="serviceUuid">
+              <el-input v-model="form.serviceUuid" placeholder="如 0000FFE0-0000-1000-8000-00805F9B34FB" maxlength="64" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row>
+          <el-col :span="12">
+            <el-form-item label="通知UUID" prop="notifyCharUuid">
+              <el-input v-model="form.notifyCharUuid" placeholder="如 0000FFE4-0000-1000-8000-00805F9B34FB" maxlength="64" />
+            </el-form-item>
+          </el-col>
           <el-col :span="12">
             <el-form-item label="状态">
               <el-radio-group v-model="form.status">
@@ -171,8 +192,9 @@
             <el-card shadow="hover">
               <template #header><span>设备信息</span></template>
               <el-descriptions :column="1" size="small" border>
-                <el-descriptions-item label="设备名称">{{ currentDevice.deviceName }}</el-descriptions-item>
-                <el-descriptions-item label="设备编号">{{ currentDevice.deviceCode }}</el-descriptions-item>
+                <el-descriptions-item label="传感器名称">{{ currentDevice.deviceName }}</el-descriptions-item>
+                <el-descriptions-item label="传感器编号">{{ currentDevice.deviceCode }}</el-descriptions-item>
+                <el-descriptions-item label="蓝牙广播名">{{ currentDevice.bluetoothName }}</el-descriptions-item>
                 <el-descriptions-item label="设备类型">{{ dictType[currentDevice.deviceType] || currentDevice.deviceType }}</el-descriptions-item>
                 <el-descriptions-item label="固件版本">{{ currentDevice.firmwareVersion }}</el-descriptions-item>
                 <el-descriptions-item label="状态"><el-tag :type="statusType[currentDevice.status]">{{ dictType[currentDevice.status] || currentDevice.status }}</el-tag></el-descriptions-item>
@@ -249,15 +271,14 @@ const data = reactive({
     pageSize: 10,
     deviceName: undefined,
     deviceCode: undefined,
+    bluetoothName: undefined,
     deviceType: undefined,
     status: undefined,
     manufacturerId: undefined
   },
   rules: {
-    deviceName: [{ required: true, message: "设备名称不能为空", trigger: "blur" }],
-    deviceCode: [{ required: true, message: "设备编号不能为空", trigger: "blur" }],
-    deviceType: [{ required: true, message: "设备类型不能为空", trigger: "change" }],
-    manufacturerId: [{ required: true, message: "请选择所属厂商", trigger: "change" }]
+    deviceName: [{ required: true, message: "传感器名称不能为空", trigger: "blur" }],
+    deviceCode: [{ required: true, message: "传感器编号不能为空", trigger: "blur" }]
   }
 })
 
@@ -317,6 +338,9 @@ function reset() {
     protocol: 'ble',
     manufacturerId: undefined,
     firmwareVersion: undefined,
+    bluetoothName: undefined,
+    serviceUuid: undefined,
+    notifyCharUuid: undefined,
     status: 'offline',
     metadata: undefined
   }
@@ -333,7 +357,7 @@ function cancel() {
 function handleAdd() {
   reset()
   open.value = true
-  title.value = "添加设备"
+  title.value = "添加传感器"
 }
 
 /** 修改按钮操作 */
@@ -343,7 +367,7 @@ function handleUpdate(row) {
   getDevice(deviceId).then(response => {
     form.value = response.data
     open.value = true
-    title.value = "修改设备"
+    title.value = "修改传感器"
   })
 }
 
@@ -371,7 +395,7 @@ function submitForm() {
 /** 删除按钮操作 */
 function handleDelete(row) {
   const deviceIds = row.deviceId || ids.value
-  proxy.$modal.confirm('是否确认删除设备编号为"' + deviceIds + '"的数据项？').then(() => {
+  proxy.$modal.confirm('是否确认删除传感器编号为"' + deviceIds + '"的数据项？').then(() => {
     return delDevice(deviceIds)
   }).then(() => {
     getList()

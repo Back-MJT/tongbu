@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "xindong-healthhub",
   "description": "昕动智能 HealthHub 微信小程序 - 健身数据追踪与AI训练方案",
-  "appid": "wx0f6771930750631d",
+  "appid": "wx71e4f887a62bccaa",
   "setting": {
     "urlCheck": false,
     "es6": true,
@@ -24,7 +24,7 @@
     "uglifyFileName": false,
     "packNpmManually": false,
     "packNpmRelationList": [],
-    "minifyWXSS": true,
+    "minifyWXSS": false,
     "minifyWXML": true,
     "localPlugins": false,
     "disableUseStrict": false,

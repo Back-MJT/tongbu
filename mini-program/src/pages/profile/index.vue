@@ -137,7 +137,7 @@
 <script lang="ts">
 import { defineComponent, ref, computed, onMounted } from 'vue';
 import { useDidShow } from '@tarojs/taro';
-import { getCurrentUser, getMyDevices, unbindDevice } from '../../services/api';
+import { getCurrentUser, getMyDevices, getMyTrainingStats, unbindDevice } from '../../services/api';
 import { enterDemoMode } from '../../config/env';
 
 export default defineComponent({
@@ -145,12 +145,12 @@ export default defineComponent({
     const userInfo = ref(null);
     const devices = ref([]);
     const stats = ref({ totalSessions: 0, totalSets: 0, totalDurationMin: 0, peakVolumeKg: 0 });
-    const stageTimeline = ref([
-      { name: '适应期', desc: '建立训练习惯', isDone: true, isActive: false },
-      { name: '进步期', desc: '提升基础力量', isDone: true, isActive: false },
-      { name: '强化期', desc: '突破重量瓶颈', isDone: false, isActive: true },
-      { name: '巩固期', desc: '稳定高水平', isDone: false, isActive: false },
-    ]);
+    const stageDefs = [
+      { key: 'beginner', name: '适应期', desc: '建立训练习惯' },
+      { key: 'growth', name: '进步期', desc: '提升基础力量' },
+      { key: 'plateau', name: '强化期', desc: '突破重量瓶颈' },
+      { key: 'advanced', name: '巩固期', desc: '稳定高水平' },
+    ];
 
     onMounted(async () => {
       await loadProfileData();
@@ -174,7 +174,7 @@ export default defineComponent({
           getCurrentUser().catch(() => ({ data: null })),
           getMyDevices().catch(() => ({ data: [] })),
         ]);
-        userInfo.value = userRes.data || getMockUser();
+        userInfo.value = userRes.data || getEmptyUser();
         const localAvatar = wx.getStorageSync('avatar_url');
         if (localAvatar) {
           userInfo.value.avatar = localAvatar;
@@ -187,34 +187,62 @@ export default defineComponent({
         } else {
           devices.value = [];
         }
-        stats.value = getMockStats();
+        const statRes = await getMyTrainingStats();
+        stats.value = normalizeStats(statRes.data);
       } catch (e) {
-        console.warn('[Profile] Load failed, using mock data', e);
-        userInfo.value = getMockUser();
+        console.warn('[Profile] Load failed', e);
+        userInfo.value = userInfo.value || getEmptyUser();
         devices.value = [];
-        stats.value = getMockStats();
+        stats.value = { totalSessions: 0, totalSets: 0, totalDurationMin: 0, peakVolumeKg: 0 };
       }
     }
 
-    function getMockUser() {
+    function getEmptyUser() {
       return {
-        userId: 10001,
-        nickname: '健身爱好者',
+        userId: 0,
+        nickname: '微信用户',
         avatar: '',
-        level: 3,
-        stage: '强化期',
-        streakDays: 7,
+        level: 1,
+        stage: 'beginner',
+        streakDays: 0,
       };
     }
 
-    function getMockStats() {
-      return { totalSessions: 23, totalSets: 156, totalDurationMin: 920, peakVolumeKg: 80 };
+    function normalizeStats(raw) {
+      const numberValue = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+      };
+      return {
+        totalSessions: numberValue(raw?.totalSessions),
+        totalSets: numberValue(raw?.totalSets),
+        totalDurationMin: numberValue(raw?.totalDurationMin),
+        peakVolumeKg: Math.round(numberValue(raw?.peakVolumeKg) * 10) / 10,
+      };
     }
 
-    const stageLabel = computed(() => userInfo.value?.stage || '强化期');
+    const stageLabel = computed(() => {
+      const stageMap = {
+        beginner: '适应期',
+        growth: '进步期',
+        plateau: '强化期',
+        advanced: '巩固期',
+      };
+      return stageMap[userInfo.value?.stage] || userInfo.value?.stageLabel || '适应期';
+    });
     const stageProgress = computed(() => {
       const level = userInfo.value?.level || 1;
       return Math.min(100, level * 20);
+    });
+
+    const stageTimeline = computed(() => {
+      const currentKey = userInfo.value?.stage || 'beginner';
+      const activeIndex = Math.max(0, stageDefs.findIndex(s => s.key === currentKey));
+      return stageDefs.map((stage, idx) => ({
+        ...stage,
+        isDone: idx < activeIndex,
+        isActive: idx === activeIndex,
+      }));
     });
 
     function goDeviceBinding() {
@@ -287,7 +315,7 @@ export default defineComponent({
 
         wx.setStorageSync('avatar_url', avatarUrl);
         userInfo.value = {
-          ...(userInfo.value || getMockUser()),
+          ...(userInfo.value || getEmptyUser()),
           avatar: avatarUrl,
         };
         wx.showToast({ title: '头像已更新', icon: 'success' });

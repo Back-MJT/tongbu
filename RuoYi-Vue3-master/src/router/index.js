@@ -150,7 +150,7 @@ export const dynamicRoutes = [
       }
     ]
   },
-  // IoT设备管理路由 (静态注册，供开发阶段访问；生产环境由菜单系统动态加载)
+  // IoT管理路由 (静态注册，供开发阶段访问；生产环境由菜单系统动态加载)
   {
     path: '/iot',
     component: Layout,
@@ -172,7 +172,7 @@ export const dynamicRoutes = [
         path: '',
         component: () => import('@/views/iot/device/index'),
         name: 'IoTDevice',
-        meta: { title: '设备管理', icon: 'device', permissions: ['iot:device:list'] }
+        meta: { title: '传感器管理', icon: 'device', permissions: ['iot:device:list'] }
       }
     ]
   },
@@ -208,7 +208,7 @@ export const dynamicRoutes = [
         path: '',
         component: () => import('@/views/iot/deviceGroup/index'),
         name: 'IoTDeviceGroup',
-        meta: { title: '设备分组', icon: 'tree', permissions: ['iot:group:list'] }
+        meta: { title: '场馆选择', icon: 'tree', permissions: ['iot:group:list'] }
       }
     ]
   },
@@ -245,6 +245,18 @@ export const dynamicRoutes = [
         component: () => import('@/views/iot/trainingSession/index'),
         name: 'IoTTrainingSession',
         meta: { title: '训练记录', icon: 'date', permissions: ['iot:training:query'] }
+      }
+    ]
+  },
+  {
+    path: '/iot/training-plan',
+    component: Layout,
+    children: [
+      {
+        path: '',
+        component: () => import('@/views/iot/trainingPlan/index'),
+        name: 'IoTTrainingPlan',
+        meta: { title: '训练计划', icon: 'education', permissions: ['iot:training:plan:list'] }
       }
     ]
   },

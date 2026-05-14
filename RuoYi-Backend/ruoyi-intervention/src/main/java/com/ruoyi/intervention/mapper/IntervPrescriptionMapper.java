@@ -24,8 +24,16 @@ public interface IntervPrescriptionMapper
      */
     List<IntervPrescription> selectByUserId(@Param("userId") String userId, @Param("tenantId") Long tenantId);
 
+    IntervPrescription selectPrescriptionById(@Param("prescriptionId") Long prescriptionId, @Param("tenantId") Long tenantId);
+
     /**
      * 插入处方
      */
     int insertPrescription(IntervPrescription prescription);
+
+    int updatePrescription(IntervPrescription prescription);
+
+    int deactivateUserPrescriptions(@Param("userId") String userId, @Param("tenantId") Long tenantId, @Param("updateBy") String updateBy);
+
+    int deletePrescriptionById(@Param("prescriptionId") Long prescriptionId, @Param("tenantId") Long tenantId, @Param("updateBy") String updateBy);
 }

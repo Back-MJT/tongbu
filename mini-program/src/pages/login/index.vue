@@ -124,7 +124,8 @@ export default defineComponent({
         }
       } catch (e) {
         console.error('[Login] wx login failed', e);
-        wx.showToast({ title: '登录失败，请重试', icon: 'none' });
+        const message = e?.message || e?.errMsg || '登录失败，请重试';
+        wx.showToast({ title: message.slice(0, 18), icon: 'none', duration: 3000 });
       } finally {
         loading.value = false;
       }

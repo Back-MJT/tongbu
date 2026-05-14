@@ -4,6 +4,8 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.ruoyi.common.exception.ServiceException;
+import com.ruoyi.common.utils.StringUtils;
 import com.ruoyi.iot.mapper.IoTDeviceMapper;
 import com.ruoyi.iot.domain.entity.IoTDevice;
 import com.ruoyi.iot.service.IIoTDeviceService;
@@ -62,6 +64,7 @@ public class IoTDeviceServiceImpl implements IIoTDeviceService
     public int insertDevice(IoTDevice iotDevice)
     {
         iotDevice.setTenantId(TenantContextHolder.getTenantId());
+        validateDeviceCodeUnique(iotDevice);
         return deviceMapper.insertDevice(iotDevice);
     }
 
@@ -73,7 +76,24 @@ public class IoTDeviceServiceImpl implements IIoTDeviceService
     public int updateDevice(IoTDevice iotDevice)
     {
         iotDevice.setTenantId(TenantContextHolder.getTenantId());
+        validateDeviceCodeUnique(iotDevice);
         return deviceMapper.updateDevice(iotDevice);
+    }
+
+    private void validateDeviceCodeUnique(IoTDevice iotDevice)
+    {
+        if (StringUtils.isBlank(iotDevice.getDeviceCode()))
+        {
+            throw new ServiceException("传感器编号不能为空");
+        }
+        IoTDevice query = new IoTDevice();
+        query.setTenantId(iotDevice.getTenantId());
+        query.setDeviceCode(iotDevice.getDeviceCode());
+        IoTDevice existing = deviceMapper.selectDeviceByCode(query);
+        if (existing != null && !existing.getDeviceId().equals(iotDevice.getDeviceId()))
+        {
+            throw new ServiceException("传感器编号“" + iotDevice.getDeviceCode() + "”已存在，请修改现有传感器或使用新的编号");
+        }
     }
 
     /**

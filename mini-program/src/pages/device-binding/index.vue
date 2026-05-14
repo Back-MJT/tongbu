@@ -34,48 +34,75 @@
     </view>
 
     <view v-if="resolvedEquipment" class="resolved-card">
-      <view class="resolved-title">当前器械</view>
-      <text class="resolved-name">{{ resolvedEquipment.equipmentName }}</text>
-      <text class="resolved-meta">器械编号: {{ resolvedEquipment.equipmentCode }}</text>
-      <text class="resolved-meta">蓝牙名称: {{ resolvedEquipment.bluetoothName || '-' }}</text>
-      <text class="resolved-meta">连接状态: {{ connectionStatusText }}</text>
-      <text v-if="autoConnectStatus" class="resolved-meta">自动连接: {{ autoConnectStatus }}</text>
-      <text v-if="counterState" class="resolved-metric">
-        次数 {{ counterState.reps }} · 已完成 {{ counterState.sets }} 组 · 当前组 {{ counterState.currentSetReps }} 次
-      </text>
-      <text v-if="counterState" class="resolved-meta">
-        主轴 {{ resolvedEquipment.countingConfig?.mainAxis || 'pitch' }}:
-        {{ counterState.axisValue.toFixed(1) }} / 幅度 {{ counterState.rangeValue.toFixed(1) }}
-      </text>
-      <text v-if="counterState && counterState.restMs > 0" class="resolved-meta">
-        当前休息 {{ Math.round(counterState.restMs / 1000) }} 秒 · 状态 {{ phaseLabel }}
-      </text>
-      <text v-if="sessionStartedAt" class="resolved-meta">
-        已训练 {{ sessionDurationMin }} 分钟
-      </text>
-      <view class="imu-debug-panel">
-        <text class="imu-debug-title">IMU 实时调试</text>
-        <text class="resolved-meta">数据状态: {{ latestSample ? '已收到姿态数据' : (connectionStatus === 'connected' ? '已连接，等待通知数据' : '未连接') }}</text>
-        <text class="resolved-meta">通知包: {{ rawNotifyCount }} 个</text>
-        <text v-if="lastRawPacket" class="resolved-meta">最后原始包({{ lastRawPacket.byteLength }}B): {{ lastRawPacket.hex }}</text>
-        <text class="resolved-meta">
-          姿态 roll / pitch / yaw:
-          {{ latestSample ? `${latestSample.roll.toFixed(1)} / ${latestSample.pitch.toFixed(1)} / ${latestSample.yaw.toFixed(1)}` : '- / - / -' }}
-        </text>
-        <text v-if="latestSample" class="resolved-meta">
-          加速度 ax / ay / az:
-          {{ latestSample.ax }} / {{ latestSample.ay }} / {{ latestSample.az }}
-        </text>
+      <view class="resolved-head">
+        <view>
+          <view class="resolved-title">当前器械</view>
+          <text class="resolved-name">{{ resolvedEquipment.equipmentName }}</text>
+          <text class="resolved-meta">编号 {{ resolvedEquipment.equipmentCode }} · 蓝牙 {{ resolvedEquipment.bluetoothName || '-' }}</text>
+        </view>
+        <view class="status-pill" :class="connectionStatus">
+          <text>{{ connectionStatusText }}</text>
+        </view>
       </view>
+
+      <text v-if="autoConnectStatus" class="auto-connect-text">{{ autoConnectStatus }}</text>
+
+      <view class="live-panel">
+        <view class="live-stat primary">
+          <text class="live-value">{{ counterState?.reps || 0 }}</text>
+          <text class="live-label">累计次数</text>
+        </view>
+        <view class="live-stat">
+          <text class="live-value">{{ counterState?.sets || 0 }}</text>
+          <text class="live-label">完成组数</text>
+        </view>
+        <view class="live-stat">
+          <text class="live-value">{{ counterState?.currentSetReps || 0 }}</text>
+          <text class="live-label">当前组</text>
+        </view>
+      </view>
+
+      <view class="motion-card">
+        <view class="motion-header">
+          <text class="motion-title">姿态曲线</text>
+          <text class="motion-state">{{ latestSample ? phaseLabel : '等待数据' }}</text>
+        </view>
+        <view class="motion-chart">
+          <view class="chart-grid top"></view>
+          <view class="chart-grid mid"></view>
+          <view class="chart-grid bottom"></view>
+          <view
+            v-for="(point, idx) in imuChartPoints"
+            :key="idx"
+            class="chart-point"
+            :style="{ left: point.left + '%', top: point.top + '%' }"
+          ></view>
+        </view>
+        <view class="motion-meta">
+          <text>主轴 {{ resolvedEquipment.countingConfig?.mainAxis || 'pitch' }}</text>
+          <text>{{ counterState ? counterState.axisValue.toFixed(1) : '--' }}°</text>
+          <text>幅度 {{ counterState ? counterState.rangeValue.toFixed(1) : '--' }}</text>
+        </view>
+      </view>
+
+      <view class="session-strip">
+        <text>通知包 {{ rawNotifyCount }} 个</text>
+        <text>{{ latestSample ? `roll/pitch/yaw ${latestSample.roll.toFixed(1)} / ${latestSample.pitch.toFixed(1)} / ${latestSample.yaw.toFixed(1)}` : '等待姿态数据' }}</text>
+        <text v-if="sessionStartedAt">已训练 {{ sessionDurationMin }} 分钟</text>
+        <text v-if="counterState && counterState.restMs > 0">休息 {{ Math.round(counterState.restMs / 1000) }} 秒</text>
+      </view>
+
       <view v-if="counterState && counterState.setSummaries.length > 0" class="set-summary-list">
         <text class="set-summary-title">已识别训练组</text>
-        <text
+        <view
           v-for="set in counterState.setSummaries"
           :key="set.setNo"
           class="set-summary-item"
         >
-          第{{ set.setNo }}组 · {{ set.reps }}次 · {{ set.durationSec }}秒
-        </text>
+          <text>第{{ set.setNo }}组</text>
+          <text>{{ set.reps }}次</text>
+          <text>{{ set.durationSec }}秒</text>
+        </view>
       </view>
       <view v-if="connectionStatus === 'connected'" class="session-actions">
         <view class="finish-btn" @tap="finishSession">结束训练并保存</view>
@@ -91,7 +118,7 @@
     <!-- BLE扫描按钮 -->
     <view class="ble-scan-btn" @tap="toggleBleScan" :class="{ scanning: isScanning }">
       <text v-if="!isScanning">🔍 重新搜索绑定传感器</text>
-      <text v-else>⏳ 正在查找 {{ expectedBluetoothName || '绑定传感器' }}... (点击停止)</text>
+      <text v-else>⏳ 正在查找 {{ expectedSensorLabel || '绑定传感器' }}... (点击停止)</text>
     </view>
 
     <!-- 扫描结果列表 -->
@@ -171,7 +198,15 @@
 <script>
 import { defineComponent, ref, computed, onMounted, onUnmounted } from 'vue';
 import Taro from '@tarojs/taro';
-import { getMyDevices, normalizeScanCode, resolveEquipment, submitTrainingSession } from '../../services/api';
+import {
+  getMyDevices,
+  heartbeatEquipment,
+  normalizeScanCode,
+  occupyEquipment,
+  releaseEquipment,
+  resolveEquipment,
+  submitTrainingSession,
+} from '../../services/api';
 import { bleService } from '../../services/ble';
 import { ImuCounterService } from '../../services/counter';
 
@@ -190,11 +225,14 @@ export default defineComponent({
     const autoConnectStatus = ref('');
     const autoConnecting = ref(false);
     const selectedTask = ref(null);
+    const activeUsage = ref(null);
     const sessionStartedAt = ref(0);
     const sessionElapsedMs = ref(0);
+    const imuSeries = ref([]);
     const counter = new ImuCounterService();
     let scanTimer = null;
     let sessionTimer = null;
+    let heartbeatTimer = null;
 
     onMounted(async () => {
       const params = Taro.getCurrentInstance()?.router?.params || {};
@@ -206,6 +244,7 @@ export default defineComponent({
           targetSets: params.targetSets || '',
           targetReps: params.targetReps || '',
           targetLoadKg: params.targetLoadKg || '',
+          expectedEquipmentCode: params.expectedEquipmentCode || '',
         };
       }
       if (params.equipmentCode) {
@@ -230,8 +269,10 @@ export default defineComponent({
     onUnmounted(() => {
       if (scanTimer) clearTimeout(scanTimer);
       if (sessionTimer) clearInterval(sessionTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       bleService.stopScan();
       bleService.disconnect().catch(() => undefined);
+      releaseCurrentUsage().catch(() => undefined);
     });
 
     async function onScanQrCode() {
@@ -248,8 +289,10 @@ export default defineComponent({
         wx.showLoading({ title: '识别器械...' });
         const resolved = await resolveEquipment(code);
         wx.hideLoading();
-        applyResolvedEquipment(resolved.data);
-        await startBleScan(true);
+        if (!validateScannedEquipment(resolved.data)) {
+          return;
+        }
+        await switchToEquipment(resolved.data);
       } catch (e) {
         wx.hideLoading();
         console.error('[DeviceBinding] scanCode failed', e);
@@ -267,10 +310,10 @@ export default defineComponent({
         wx.showLoading({ title: '加载器械...' });
         const resolved = await resolveEquipment(code);
         wx.hideLoading();
-        applyResolvedEquipment(resolved.data);
-        if (autoScanBle) {
-          await startBleScan(true);
+        if (!validateScannedEquipment(resolved.data)) {
+          return;
         }
+        await switchToEquipment(resolved.data, autoScanBle);
       } catch (e) {
         wx.hideLoading();
         console.error('[DeviceBinding] load equipment failed', e);
@@ -295,7 +338,7 @@ export default defineComponent({
       foundDevices.value = [];
       autoConnecting.value = autoConnect;
       autoConnectStatus.value = resolvedEquipment.value && autoConnect
-        ? `正在查找 ${expectedBluetoothName.value || '绑定传感器'}`
+        ? `正在查找 ${expectedSensorLabel.value || '绑定传感器'}`
         : '';
       bindResult.value = resolvedEquipment.value
         ? null
@@ -355,6 +398,124 @@ export default defineComponent({
       }
     }
 
+    function validateScannedEquipment(equipment) {
+      const expectedCode = selectedTask.value?.expectedEquipmentCode;
+      if (!expectedCode || !equipment?.equipmentCode || expectedCode === equipment.equipmentCode) {
+        return true;
+      }
+      wx.showModal({
+        title: '器械不匹配',
+        content: `当前任务需要扫描 ${expectedCode}，你扫描的是 ${equipment.equipmentCode}。请扫描任务对应器械二维码。`,
+        showCancel: false,
+        confirmText: '重新扫码',
+      });
+      bindResult.value = { type: 'error', message: '扫码器械与当前训练任务不匹配' };
+      return false;
+    }
+
+    async function switchToEquipment(equipment, autoScanBle = true) {
+      const previousEquipment = resolvedEquipment.value;
+      const isDifferentEquipment = previousEquipment
+        && previousEquipment.equipmentCode
+        && equipment?.equipmentCode
+        && previousEquipment.equipmentCode !== equipment.equipmentCode;
+
+      if (isDifferentEquipment || connectionStatus.value === 'connected' || connectionStatus.value === 'connecting') {
+        autoConnectStatus.value = `正在切换到 ${equipment.equipmentName || equipment.equipmentCode}`;
+        await stopCurrentBleSession();
+      }
+
+      const usage = await occupyResolvedEquipment(equipment);
+      if (!usage) {
+        return;
+      }
+      applyResolvedEquipment(equipment);
+      activeUsage.value = usage;
+      startUsageHeartbeat();
+      if (autoScanBle) {
+        await startBleScan(true);
+      }
+    }
+
+    async function stopCurrentBleSession() {
+      stopBleScan();
+      if (sessionTimer) clearInterval(sessionTimer);
+      sessionTimer = null;
+      sessionStartedAt.value = 0;
+      sessionElapsedMs.value = 0;
+      connectionStatus.value = 'idle';
+      autoConnecting.value = false;
+      await bleService.disconnect().catch((err) => {
+        console.warn('[DeviceBinding] disconnect before switch ignored', err);
+      });
+      await releaseCurrentUsage();
+    }
+
+    async function occupyResolvedEquipment(equipment) {
+      if (!equipment?.equipmentCode) {
+        wx.showToast({ title: '器械编号缺失，请重新扫码', icon: 'none' });
+        return null;
+      }
+      wx.showLoading({ title: '确认器械占用...' });
+      try {
+        const res = await occupyEquipment({
+          equipmentCode: equipment.equipmentCode,
+          venueId: equipment.venueId,
+          taskId: selectedTask.value?.taskId,
+        });
+        wx.hideLoading();
+        return res.data;
+      } catch (e) {
+        wx.hideLoading();
+        console.error('[DeviceBinding] occupy equipment failed', e);
+        bindResult.value = { type: 'error', message: e.message || '器械正在使用中，请稍后再试' };
+        wx.showToast({ title: e.message || '器械正在使用中', icon: 'none' });
+        return null;
+      }
+    }
+
+    function startUsageHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(async () => {
+        const usage = activeUsage.value;
+        const equipment = resolvedEquipment.value;
+        if (!usage?.usageSessionId || !equipment?.equipmentCode) {
+          return;
+        }
+        try {
+          await heartbeatEquipment({
+            equipmentCode: equipment.equipmentCode,
+            usageSessionId: usage.usageSessionId,
+          });
+        } catch (e) {
+          console.warn('[DeviceBinding] heartbeat failed', e);
+          bindResult.value = { type: 'error', message: '器械占用已失效，请重新扫码连接' };
+          stopCurrentBleSession();
+        }
+      }, 30000);
+    }
+
+    async function releaseCurrentUsage() {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+      const usage = activeUsage.value;
+      const equipment = resolvedEquipment.value;
+      activeUsage.value = null;
+      if (!usage?.usageSessionId || !equipment?.equipmentCode) {
+        return;
+      }
+      try {
+        await releaseEquipment({
+          equipmentCode: equipment.equipmentCode,
+          usageSessionId: usage.usageSessionId,
+        });
+      } catch (e) {
+        console.warn('[DeviceBinding] release usage ignored', e);
+      }
+    }
+
     async function onSelectDevice(device, fromAuto = false) {
       console.log('[DeviceBinding] select device tapped', device);
       if (!resolvedEquipment.value) {
@@ -384,6 +545,7 @@ export default defineComponent({
             console.log('[DeviceBinding] IMU sample', sample);
             latestSample.value = sample;
             counterState.value = counter.pushSample(sample);
+            appendImuPoint(sample);
           },
         });
         wx.hideLoading();
@@ -447,6 +609,7 @@ export default defineComponent({
         const result = await submitTrainingSession({
           equipmentCode: resolvedEquipment.value.equipmentCode,
           deviceCode: resolvedEquipment.value.deviceCode,
+          usageSessionId: activeUsage.value?.usageSessionId,
           exerciseType: selectedTask.value?.exerciseType || resolvedEquipment.value.equipmentType || 'strength',
           taskId: selectedTask.value?.taskId,
           exerciseName: selectedTask.value?.exerciseName,
@@ -469,6 +632,7 @@ export default defineComponent({
         };
         showSavedActions();
         await bleService.disconnect();
+        await releaseCurrentUsage();
         if (sessionTimer) clearInterval(sessionTimer);
         sessionTimer = null;
         connectionStatus.value = 'idle';
@@ -500,6 +664,7 @@ export default defineComponent({
         const result = await submitTrainingSession({
           equipmentCode: resolvedEquipment.value.equipmentCode,
           deviceCode: resolvedEquipment.value.deviceCode,
+          usageSessionId: activeUsage.value?.usageSessionId,
           exerciseType: selectedTask.value?.exerciseType || resolvedEquipment.value.equipmentType || 'strength',
           taskId: selectedTask.value?.taskId,
           exerciseName: selectedTask.value?.exerciseName,
@@ -569,8 +734,28 @@ export default defineComponent({
       return Math.max(1, Math.round(sessionElapsedMs.value / 60000));
     });
 
+    const imuChartPoints = computed(() => {
+      const points = imuSeries.value;
+      if (!points.length) {
+        return [];
+      }
+      const min = Math.min(...points);
+      const max = Math.max(...points);
+      const span = Math.max(1, max - min);
+      const denominator = Math.max(1, points.length - 1);
+      return points.map((value, index) => ({
+        left: Math.round((index / denominator) * 1000) / 10,
+        top: Math.max(6, Math.min(88, Math.round((1 - (value - min) / span) * 82 + 6))),
+      }));
+    });
+
     const expectedBluetoothName = computed(() => {
       return resolvedEquipment.value?.bluetoothName || resolvedEquipment.value?.deviceName || '';
+    });
+
+    const expectedSensorLabel = computed(() => {
+      if (!resolvedEquipment.value) return '';
+      return expectedBluetoothName.value || resolvedEquipment.value.deviceCode || `设备ID ${resolvedEquipment.value.deviceId}`;
     });
 
     function applyResolvedEquipment(equipment) {
@@ -587,6 +772,7 @@ export default defineComponent({
       latestSample.value = null;
       sessionStartedAt.value = 0;
       sessionElapsedMs.value = 0;
+      imuSeries.value = [];
       bindResult.value = {
         type: 'success',
         message: `已识别 ${equipment.equipmentName}，正在自动连接 ${equipment.bluetoothName || equipment.deviceCode || '绑定传感器'}`,
@@ -614,11 +800,14 @@ export default defineComponent({
       const expectedName = normalizeDeviceName(expectedBluetoothName.value);
       const deviceName = normalizeDeviceName(`${device.name || ''} ${device.localName || ''}`);
       const expectedDeviceCode = normalizeDeviceName(resolvedEquipment.value.deviceCode || '');
+      const deviceId = normalizeDeviceName(device.deviceId || '');
       let score = 0;
 
       if (expectedName && deviceName === expectedName) score = Math.max(score, 100);
       if (expectedName && deviceName.includes(expectedName)) score = Math.max(score, 90);
-      if (expectedDeviceCode && deviceName.includes(expectedDeviceCode)) score = Math.max(score, 85);
+      if (expectedDeviceCode && deviceName.includes(expectedDeviceCode)) score = Math.max(score, 95);
+      if (expectedDeviceCode && deviceId.includes(expectedDeviceCode)) score = Math.max(score, 90);
+      if (expectedDeviceCode && normalizeDeviceName(device.deviceCode || '').includes(expectedDeviceCode)) score = Math.max(score, 95);
 
       const serviceUuid = normalizeUuid(resolvedEquipment.value.serviceUuid);
       const advertised = (device.advertisServiceUUIDs || []).map(normalizeUuid);
@@ -638,6 +827,13 @@ export default defineComponent({
       return text.length > 18 ? `${text.slice(0, 8)}...${text.slice(-6)}` : text;
     }
 
+    function appendImuPoint(sample) {
+      const axis = resolvedEquipment.value?.countingConfig?.mainAxis || 'pitch';
+      const value = Number(sample?.[axis] ?? sample?.pitch ?? 0);
+      const next = imuSeries.value.concat(Number.isFinite(value) ? value : 0);
+      imuSeries.value = next.slice(-28);
+    }
+
     return {
       isScanning,
       foundDevices,
@@ -648,11 +844,14 @@ export default defineComponent({
       rawNotifyCount,
       lastRawPacket,
       counterState,
+      imuChartPoints,
       connectionStatus,
       autoConnectStatus,
       autoConnecting,
       selectedTask,
+      activeUsage,
       expectedBluetoothName,
+      expectedSensorLabel,
       connectionStatusText,
       phaseLabel,
       sessionStartedAt,
@@ -673,17 +872,18 @@ export default defineComponent({
 
 <style>
 .device-binding-page {
-  padding: 24rpx;
-  background: #f5f5f5;
+  padding: 28rpx 24rpx 48rpx;
+  background: #f4f7fb;
   min-height: 100vh;
+  box-sizing: border-box;
 }
 .page-header {
   margin-bottom: 24rpx;
 }
 .page-title {
   font-size: 40rpx;
-  font-weight: bold;
-  color: #1a1a2e;
+  font-weight: 800;
+  color: #172033;
 }
 .task-context-card {
   background: #fff;
@@ -717,6 +917,8 @@ export default defineComponent({
   margin-bottom: 24rpx;
   display: flex;
   align-items: center;
+  border: 1rpx solid #edf1f6;
+  box-shadow: 0 10rpx 28rpx rgba(20, 38, 70, 0.04);
 }
 .scan-icon { font-size: 56rpx; margin-right: 20rpx; }
 .scan-info { flex: 1; }
@@ -751,9 +953,18 @@ export default defineComponent({
 }
 .resolved-card {
   background: #ffffff;
-  border-radius: 16rpx;
+  border-radius: 20rpx;
   padding: 28rpx 32rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #edf1f6;
+  box-shadow: 0 16rpx 40rpx rgba(20, 38, 70, 0.06);
+}
+.resolved-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20rpx;
+  margin-bottom: 18rpx;
 }
 .resolved-title {
   font-size: 24rpx;
@@ -780,19 +991,138 @@ export default defineComponent({
   color: #666;
   line-height: 1.8;
 }
-.imu-debug-panel {
-  margin-top: 18rpx;
-  padding: 18rpx;
-  background: #f7fbff;
-  border: 1rpx solid #cfe6ff;
-  border-radius: 12rpx;
-}
-.imu-debug-title {
+.auto-connect-text {
   display: block;
+  padding: 14rpx 18rpx;
+  border-radius: 12rpx;
+  background: #f0f7ff;
+  color: #2563eb;
+  font-size: 24rpx;
+  line-height: 1.5;
+  margin-bottom: 18rpx;
+}
+.status-pill {
+  flex: 0 0 auto;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+.status-pill.connected {
+  background: #e9fbf2;
+  color: #0b8f55;
+}
+.status-pill.connecting {
+  background: #fff7e6;
+  color: #b56a00;
+}
+.status-pill.failed {
+  background: #fff1f0;
+  color: #d93025;
+}
+.live-panel {
+  display: flex;
+  gap: 14rpx;
+  margin-bottom: 20rpx;
+}
+.live-stat {
+  flex: 1;
+  min-width: 0;
+  padding: 22rpx 12rpx;
+  border-radius: 16rpx;
+  background: #f7fafc;
+  text-align: center;
+  border: 1rpx solid #edf1f6;
+}
+.live-stat.primary {
+  background: #eef7ff;
+  border-color: #d5e9ff;
+}
+.live-value {
+  display: block;
+  color: #172033;
+  font-size: 44rpx;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.live-stat.primary .live-value {
+  color: #2563eb;
+}
+.live-label {
+  display: block;
+  margin-top: 8rpx;
+  color: #7b8794;
+  font-size: 22rpx;
+}
+.motion-card {
+  padding: 22rpx;
+  border-radius: 18rpx;
+  background: #101828;
+  margin-bottom: 18rpx;
+}
+.motion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+.motion-title {
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+.motion-state {
+  color: #9ee7d5;
   font-size: 26rpx;
-  font-weight: 600;
-  color: #1677d2;
-  margin-bottom: 8rpx;
+}
+.motion-chart {
+  position: relative;
+  height: 190rpx;
+  border-radius: 14rpx;
+  overflow: hidden;
+  background: linear-gradient(180deg, #17233a 0%, #111827 100%);
+}
+.chart-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1rpx;
+  background: rgba(255,255,255,0.12);
+}
+.chart-grid.top { top: 24%; }
+.chart-grid.mid { top: 50%; }
+.chart-grid.bottom { top: 76%; }
+.chart-point {
+  position: absolute;
+  width: 10rpx;
+  height: 10rpx;
+  margin-left: -5rpx;
+  margin-top: -5rpx;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 14rpx rgba(74, 222, 128, 0.7);
+}
+.motion-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 16rpx;
+  color: #c8d3e1;
+  font-size: 22rpx;
+}
+.session-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 18rpx;
+  border-radius: 14rpx;
+  background: #f8fafc;
+  color: #5d6b7c;
+  font-size: 23rpx;
+  line-height: 1.35;
+  margin-bottom: 18rpx;
 }
 .set-summary-list {
   margin-top: 18rpx;
@@ -806,22 +1136,29 @@ export default defineComponent({
   margin-bottom: 8rpx;
 }
 .set-summary-item {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 24rpx;
   color: #394150;
-  line-height: 1.8;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #f0f3f7;
+}
+.set-summary-item:last-child {
+  border-bottom: 0;
 }
 .session-actions {
   margin-top: 20rpx;
 }
 .finish-btn {
-  background: #0b8f55;
+  background: #13a36f;
   color: #fff;
   text-align: center;
   padding: 18rpx 24rpx;
   border-radius: 999rpx;
   font-size: 26rpx;
   font-weight: 600;
+  box-shadow: 0 12rpx 24rpx rgba(19, 163, 111, 0.18);
 }
 .simulate-btn {
   background: #eef6ff;

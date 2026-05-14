@@ -1,0 +1,27 @@
+-- 用户训练计划 / 干预处方表
+CREATE TABLE IF NOT EXISTS interv_prescription (
+  prescription_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '处方ID',
+  prescription_no VARCHAR(64) DEFAULT NULL COMMENT '处方编号',
+  user_id VARCHAR(64) NOT NULL COMMENT '用户ID',
+  profile_id VARCHAR(64) DEFAULT NULL COMMENT '健康档案ID',
+  intervention_type VARCHAR(32) NOT NULL DEFAULT 'exercise' COMMENT '干预类型',
+  status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态 active/inactive/draft',
+  duration_days INT DEFAULT 7 COMMENT '计划周期天数',
+  recommendations JSON DEFAULT NULL COMMENT '训练任务JSON',
+  sleep_plan JSON DEFAULT NULL COMMENT '睡眠计划JSON',
+  adjustment_rules JSON DEFAULT NULL COMMENT '调整规则JSON',
+  notes VARCHAR(1000) DEFAULT NULL COMMENT '备注',
+  start_date DATE DEFAULT NULL COMMENT '开始日期',
+  end_date DATE DEFAULT NULL COMMENT '结束日期',
+  completion_rate DECIMAL(5,2) DEFAULT 0.00 COMMENT '完成率',
+  del_flag CHAR(1) DEFAULT '0' COMMENT '删除标志',
+  create_by VARCHAR(64) DEFAULT '' COMMENT '创建者',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  update_by VARCHAR(64) DEFAULT '' COMMENT '更新者',
+  update_time DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  tenant_id BIGINT NOT NULL DEFAULT 1 COMMENT '租户ID',
+  version INT DEFAULT 1 COMMENT '版本',
+  PRIMARY KEY (prescription_id),
+  KEY idx_interv_prescription_user (tenant_id, user_id, status, del_flag),
+  KEY idx_interv_prescription_no (tenant_id, prescription_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户训练计划/干预处方表';

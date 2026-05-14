@@ -135,9 +135,13 @@
 
     <!-- 空状态 -->
     <view v-if="!loading && historyRecords.length === 0" class="empty-state">
-      <text class="empty-icon">📊</text>
+      <view class="empty-visual">
+        <view class="empty-bar green"></view>
+        <view class="empty-bar red"></view>
+        <view class="empty-bar blue"></view>
+      </view>
       <text class="empty-title">暂无训练记录</text>
-      <text class="empty-desc">开始训练后数据将在这里展示</text>
+      <text class="empty-desc">完成一次器械训练后，这里会显示趋势、组数和历史表现。</text>
       <view class="empty-action" @tap="goTraining">
         <text>去开始训练</text>
       </view>
@@ -500,9 +504,10 @@ export default defineComponent({
 
 <style>
 .progress-page {
-  padding: 24rpx;
-  background: #f5f5f5;
+  padding: 28rpx 24rpx 48rpx;
+  background: #f4f7fb;
   min-height: 100vh;
+  box-sizing: border-box;
 }
 .page-header {
   display: flex;
@@ -512,8 +517,8 @@ export default defineComponent({
 }
 .page-title {
   font-size: 40rpx;
-  font-weight: bold;
-  color: #1a1a2e;
+  font-weight: 800;
+  color: #172033;
 }
 .period-label {
   font-size: 26rpx;
@@ -523,10 +528,11 @@ export default defineComponent({
   border-radius: 20rpx;
 }
 .overview-card {
-  background: linear-gradient(135deg, #4A90E2, #6BB5FF);
+  background: linear-gradient(135deg, #2563eb, #13b5a5);
   border-radius: 16rpx;
   padding: 36rpx 24rpx;
   margin-bottom: 24rpx;
+  box-shadow: 0 18rpx 40rpx rgba(37, 99, 235, 0.18);
 }
 .stat-row {
   display: flex;
@@ -565,6 +571,8 @@ export default defineComponent({
   border-radius: 16rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid #edf1f6;
+  box-shadow: 0 10rpx 30rpx rgba(20, 38, 70, 0.04);
 }
 .card-title {
   font-size: 30rpx;
@@ -687,6 +695,7 @@ export default defineComponent({
   margin-bottom: 16rpx;
   display: flex;
   align-items: center;
+  border: 1rpx solid #edf1f6;
 }
 .history-date-col {
   margin-right: 20rpx;
@@ -739,26 +748,61 @@ export default defineComponent({
   font-size: 24rpx;
 }
 .empty-state {
+  margin-top: 24rpx;
+  padding: 80rpx 44rpx 72rpx;
+  background: #fff;
+  border: 1rpx solid #edf1f6;
+  border-radius: 20rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  padding: 100rpx 40rpx;
+  box-shadow: 0 12rpx 34rpx rgba(20, 38, 70, 0.04);
 }
-.empty-icon { font-size: 80rpx; display: block; margin-bottom: 20rpx; }
+.empty-visual {
+  width: 104rpx;
+  height: 104rpx;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10rpx;
+  margin-bottom: 24rpx;
+  border-radius: 24rpx;
+  background: #f6f9fc;
+}
+.empty-bar {
+  width: 16rpx;
+  border-radius: 8rpx 8rpx 2rpx 2rpx;
+}
+.empty-bar.green { height: 48rpx; background: #13b56b; }
+.empty-bar.red { height: 36rpx; background: #ff5b5f; }
+.empty-bar.blue { height: 62rpx; background: #2563eb; }
 .empty-title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #1a1a2e;
+  color: #172033;
   display: block;
   margin-bottom: 12rpx;
 }
-.empty-desc { font-size: 26rpx; color: #999; }
+.empty-desc {
+  width: 100%;
+  font-size: 26rpx;
+  color: #7b8794;
+  line-height: 1.6;
+  margin-bottom: 28rpx;
+}
 .empty-action {
-  display: inline-flex;
-  margin-top: 28rpx;
-  padding: 16rpx 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220rpx;
+  height: 76rpx;
+  padding: 0 36rpx;
   border-radius: 999rpx;
-  background: #4A90E2;
+  background: #2563eb;
   color: #fff;
   font-size: 28rpx;
   font-weight: 600;
+  box-shadow: 0 12rpx 24rpx rgba(37, 99, 235, 0.2);
 }
 </style>

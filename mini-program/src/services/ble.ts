@@ -175,7 +175,7 @@ class BleService {
     const notifyCharUuid = (options.notifyCharUuid || DEFAULT_NOTIFY_CHAR_UUID).toUpperCase();
     const writeCharUuid = (options.writeCharUuid || DEFAULT_WRITE_CHAR_UUID).toUpperCase();
 
-    if (this.activeDeviceId && this.activeDeviceId !== deviceId) {
+    if (this.activeDeviceId) {
       await this.disconnect().catch(() => undefined);
     }
 

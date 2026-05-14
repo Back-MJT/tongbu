@@ -13,7 +13,7 @@
     <!-- 训练状态卡片 -->
     <view class="session-card">
       <view class="session-info">
-        <text class="device-name">{{ deviceName || '未选择设备' }}</text>
+        <text class="device-name">{{ venueName || '未选择场馆' }}</text>
         <text class="session-status" :class="sessionStatusClass">
           {{ sessionStatusText }}
         </text>
@@ -114,7 +114,7 @@
     <view v-if="!loading && tasks.length === 0" class="empty-state">
       <text class="empty-icon">🏋️</text>
       <text class="empty-title">暂无今日训练任务</text>
-      <text class="empty-desc">绑定设备后自动获取AI训练方案</text>
+      <text class="empty-desc">{{ loadError || '选择场馆后自动获取今日训练任务' }}</text>
     </view>
   </view>
 </template>
@@ -122,15 +122,14 @@
 <script>
 import { defineComponent, ref, computed, onMounted } from 'vue';
 import {
+  getCurrentVenue,
   getMiniprogramPrescription,
-  getTodayProgress,
-  getTrainingPlan,
-  getMyDevices,
 } from '../../services/api';
 
 export default defineComponent({
   setup() {
     const loading = ref(true);
+    const loadError = ref('');
     const today = ref('');
     const tasks = ref([]);
     const completedSets = ref(0);
@@ -142,34 +141,38 @@ export default defineComponent({
     const exerciseGoal = ref('');
     const algoVersion = ref('');
     const healthTips = ref([]);
-    const deviceName = ref('');
-    const deviceCode = ref('');
+    const venueName = ref('');
+    const venueId = ref('');
     const exerciseType = ref('strength');
-    const currentDevice = ref(null);
 
     onMounted(async () => {
       const now = new Date();
       today.value = `${now.getMonth() + 1}月${now.getDate()}日 ${['日','一','二','三','四','五','六'][now.getDay()]}`;
       loading.value = true;
+      loadError.value = '';
 
       try {
-        // 加载设备信息
-        let devices = [];
-        try {
-          const devRes = await getMyDevices();
-          devices = devRes.data || [];
-        } catch (e) {
-          console.warn('[DailyTask] getMyDevices failed', e);
+        venueId.value = wx.getStorageSync('current_venue_id') || '';
+        venueName.value = wx.getStorageSync('current_venue_name') || '智能力量站';
+        if (!venueId.value) {
+          try {
+            const venueRes = await getCurrentVenue();
+            if (venueRes.data?.venueId) {
+              venueId.value = String(venueRes.data.venueId);
+              venueName.value = venueRes.data.venueName || venueName.value;
+              wx.setStorageSync('current_venue_id', venueId.value);
+              wx.setStorageSync('current_venue_name', venueName.value);
+            }
+          } catch (e) {
+            console.warn('[DailyTask] getCurrentVenue failed', e);
+          }
+        }
+        if (!venueId.value) {
+          loadError.value = '请先在首页选择场馆';
+          tasks.value = [];
+          return;
         }
 
-        if (devices.length > 0) {
-          currentDevice.value = devices[0];
-          deviceName.value = devices[0].deviceName;
-          deviceCode.value = devices[0].deviceCode;
-        }
-
-        // 尝试从AE算法获取训练处方
-        let prescriptionLoaded = false;
         try {
           const userId = wx.getStorageSync('user_id') || 'demo-user';
           const age = wx.getStorageSync('user_age') || 30;
@@ -178,7 +181,8 @@ export default defineComponent({
             user_id: userId,
             age: age,
             gender: wx.getStorageSync('user_gender') || undefined,
-            device_type: deviceCode.value || undefined,
+            device_type: exerciseType.value,
+            venueId: venueId.value,
             sessions_last_30_days: wx.getStorageSync('sessions_30d') || undefined,
           });
 
@@ -195,48 +199,18 @@ export default defineComponent({
             totalSets.value = tasks.value.reduce((sum, t) => sum + (t.targetSets || 0), 0);
             totalReps.value = tasks.value.reduce((sum, t) => sum + (t.targetReps || 0), 0);
             completedSets.value = rx.completedSessions || 0;
-            prescriptionLoaded = true;
+            completedReps.value = rx.totalReps || 0;
           }
         } catch (e) {
-          console.warn('[DailyTask] AE prescription failed, fallback to legacy API', e);
-        }
-
-        // Fallback: 从RuoYi后端获取今日进度
-        if (!prescriptionLoaded) {
-          try {
-            const progRes = await getTodayProgress();
-            const prog = progRes.data || {};
-            tasks.value = prog.tasks || [];
-            completedSets.value = prog.completedSessions || 0;
-            completedReps.value = prog.totalReps || 0;
-
-            if (tasks.value.length > 0) {
-              totalSets.value = tasks.value.reduce((sum, t) => sum + (t.targetSets || 0), 0);
-              totalReps.value = tasks.value.reduce((sum, t) => sum + (t.targetReps || 0), 0);
-            }
-          } catch (e) {
-            console.warn('[DailyTask] getTodayProgress failed, using mock data', e);
-            tasks.value = getMockTasks();
-            totalSets.value = tasks.value.reduce((sum, t) => sum + t.targetSets, 0);
-            totalReps.value = tasks.value.reduce((sum, t) => sum + t.targetReps, 0);
-          }
-
-          // Fallback: AI建议从RuoYi
-          if (!aiSuggestion.value && deviceCode.value) {
-            try {
-              const planRes = await getTrainingPlan({
-                deviceCode: deviceCode.value,
-                exerciseType: exerciseType.value,
-              });
-              aiSuggestion.value = planRes.data?.description || '';
-            } catch (e) {
-              console.warn('[DailyTask] getTrainingPlan failed', e);
-              aiSuggestion.value = '根据您本周的训练数据，建议今日进行胸部+背部复合训练，每组间休息60秒。';
-            }
-          }
+          console.warn('[DailyTask] prescription failed', e);
+          tasks.value = [];
+          totalSets.value = 0;
+          totalReps.value = 0;
+          loadError.value = '训练方案加载失败，请检查登录状态和网络后重试';
         }
       } catch (err) {
         console.error('[DailyTask] Load failed', err);
+        loadError.value = '今日训练加载失败，请稍后重试';
       } finally {
         loading.value = false;
       }
@@ -265,6 +239,7 @@ export default defineComponent({
         `taskId=${encodeURIComponent(task.taskId || '')}`,
         `exerciseName=${encodeURIComponent(task.exerciseName || '')}`,
         `exerciseType=${encodeURIComponent(task.exerciseType || 'strength')}`,
+        `expectedEquipmentCode=${encodeURIComponent(task.equipmentCode || '')}`,
         `targetSets=${encodeURIComponent(task.targetSets || '')}`,
         `targetReps=${encodeURIComponent(task.targetReps || '')}`,
         `targetLoadKg=${encodeURIComponent(task.targetLoadKg || '')}`,
@@ -282,61 +257,9 @@ export default defineComponent({
       return classMap[label] || 'intensity-medium';
     }
 
-    function getMockTasks() {
-      return [
-        {
-          taskId: 1,
-          exerciseName: '平板杠铃卧推',
-          exerciseType: 'bench_press',
-          targetSets: 4,
-          targetReps: 10,
-          targetLoadKg: 40,
-          restSeconds: 90,
-          intensityLabel: '中等',
-          coachingTip: '注意控制下放速度，胸部充分拉伸后发力推起',
-          status: 'in_progress',
-        },
-        {
-          taskId: 2,
-          exerciseName: '哑铃上斜卧推',
-          exerciseType: 'incline_press',
-          targetSets: 3,
-          targetReps: 12,
-          targetLoadKg: 16,
-          restSeconds: 75,
-          intensityLabel: '中等',
-          coachingTip: '保持上背贴紧凳面，肘部约45度角',
-          status: 'pending',
-        },
-        {
-          taskId: 3,
-          exerciseName: '高位下拉',
-          exerciseType: 'lat_pulldown',
-          targetSets: 4,
-          targetReps: 10,
-          targetLoadKg: 35,
-          restSeconds: 90,
-          intensityLabel: '中高',
-          coachingTip: '想象用肘部引导下拉，顶峰收缩停留1秒',
-          status: 'pending',
-        },
-        {
-          taskId: 4,
-          exerciseName: '坐姿划船',
-          exerciseType: 'seated_row',
-          targetSets: 3,
-          targetReps: 12,
-          targetLoadKg: 30,
-          restSeconds: 75,
-          intensityLabel: '中等',
-          coachingTip: '保持核心收紧，肩胛骨后缩发力',
-          status: 'pending',
-        },
-      ];
-    }
-
     return {
       loading,
+      loadError,
       today,
       tasks,
       completedSets,
@@ -348,7 +271,7 @@ export default defineComponent({
       exerciseGoal,
       algoVersion,
       healthTips,
-      deviceName,
+      venueName,
       progressPercent,
       sessionStatusClass,
       sessionStatusText,

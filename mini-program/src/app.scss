@@ -7,8 +7,16 @@ page {
     'Microsoft Yahei', sans-serif;
   font-size: 28rpx;
   color: #1a1a2e;
-  background: #f5f5f5;
+  background: #f4f7fb;
   -webkit-font-smoothing: antialiased;
+}
+
+view,
+text,
+button,
+input,
+textarea {
+  box-sizing: border-box;
 }
 
 /* 通用工具类 */

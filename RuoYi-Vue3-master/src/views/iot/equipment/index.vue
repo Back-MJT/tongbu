@@ -44,14 +44,16 @@
       <el-table-column label="器械编号" align="center" prop="equipmentCode" width="160" />
       <el-table-column label="器械类型" align="center" prop="equipmentType" width="140" />
       <el-table-column label="安装位置" align="center" prop="location" min-width="160" show-overflow-tooltip />
-      <el-table-column label="蓝牙名称" align="center" min-width="200">
+      <el-table-column label="绑定传感器" align="center" min-width="220">
         <template #default="scope">
           <div class="binding-cell">
             <template v-if="isSensorBound(scope.row)">
-              <div class="binding-main">{{ scope.row.bluetoothName }}</div>
+              <div class="binding-main">{{ scope.row.bluetoothName || scope.row.deviceCode }}</div>
+              <div class="table-sub" v-if="scope.row.deviceCode">{{ scope.row.deviceCode }}</div>
               <el-tag type="success" size="small">已绑定</el-tag>
               <div class="binding-actions">
                 <el-button link type="primary" size="small" @click="handleBindDevice(scope.row)" v-hasPermi="['iot:equipment:edit']">修改</el-button>
+                <el-button link type="danger" size="small" @click="handleUnbindDevice(scope.row)" v-hasPermi="['iot:equipment:edit']">解绑</el-button>
               </div>
             </template>
             <template v-else>
@@ -116,13 +118,20 @@
           </el-col>
         </el-row>
         <el-row>
-          <el-col :span="24">
+          <el-col :span="12">
+            <el-form-item label="传感器编号">
+              <el-input v-model="form.deviceCode" placeholder="如 HB-3412" clearable maxlength="64">
+                <template #prepend>编号</template>
+              </el-input>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="蓝牙名称">
               <el-input v-model="form.bluetoothName" placeholder="请输入蓝牙名称（如 gy_ble25t1）" clearable maxlength="100">
-                <template #prepend>蓝牙名称</template>
+                <template #prepend>广播名</template>
               </el-input>
               <div style="color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px;">
-                当前蓝牙名称：{{ form.bluetoothName || '未设置' }}
+                保存后会自动绑定设备管理中同编号或同蓝牙名称的传感器
               </div>
             </el-form-item>
           </el-col>
@@ -156,11 +165,46 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog title="绑定蓝牙传感器" v-model="bindOpen" width="560px" append-to-body>
+      <el-form :model="bindForm" ref="bindRef" label-width="100px">
+        <el-form-item label="器械">
+          <div>{{ bindForm.equipmentName }}（{{ bindForm.equipmentCode }}）</div>
+        </el-form-item>
+        <el-form-item label="传感器" prop="deviceId" required>
+          <el-select
+            v-model="bindForm.deviceId"
+            filterable
+            clearable
+            placeholder="请选择蓝牙传感器"
+            style="width: 100%"
+            @visible-change="visible => visible && loadSensorOptions()"
+          >
+            <el-option
+              v-for="item in sensorOptions"
+              :key="item.deviceId"
+              :label="sensorLabel(item)"
+              :value="item.deviceId"
+            />
+          </el-select>
+          <div style="color: var(--el-text-color-secondary); font-size: 12px; margin-top: 4px;">
+            一个传感器只能绑定一台器械；保存后会自动解除该传感器在其他器械上的旧绑定。
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="submitBindDevice">确 定</el-button>
+          <el-button @click="bindOpen = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="IoTEquipment">
 import { listEquipment, getEquipment, addEquipment, updateEquipment, delEquipment, delEquipmentBatch } from "@/api/iot/equipment"
+import { listDevice } from "@/api/iot/device"
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -176,6 +220,9 @@ const single = ref(true)
 const multiple = ref(true)
 const total = ref(0)
 const title = ref("")
+const bindOpen = ref(false)
+const bindForm = ref({})
+const sensorOptions = ref([])
 
 const data = reactive({
   form: {},
@@ -229,6 +276,7 @@ function reset() {
     equipmentType: undefined,
     location: undefined,
     qrContent: undefined,
+    deviceCode: undefined,
     bluetoothName: undefined,
     status: "0",
     remark: undefined
@@ -299,13 +347,21 @@ function isSensorBound(row) {
 }
 
 function handleBindDevice(row) {
-  handleUpdate(row)
+  bindForm.value = {
+    equipmentId: row.equipmentId,
+    equipmentCode: row.equipmentCode,
+    equipmentName: row.equipmentName,
+    deviceId: row.deviceId || undefined
+  }
+  bindOpen.value = true
+  loadSensorOptions()
 }
 
 function handleUnbindDevice(row) {
   proxy.$modal.confirm('是否确认解绑器械 "' + row.equipmentName + '" 的传感器？').then(() => {
     const data = {
       equipmentId: row.equipmentId,
+      deviceCode: null,
       bluetoothName: null
     }
     updateEquipment(data).then(() => {
@@ -313,6 +369,34 @@ function handleUnbindDevice(row) {
       getList()
     })
   }).catch(() => {})
+}
+
+function loadSensorOptions() {
+  listDevice({ pageNum: 1, pageSize: 200, protocol: 'ble' }).then(res => {
+    sensorOptions.value = res.rows || []
+  })
+}
+
+function sensorLabel(item) {
+  const name = item.deviceName || '未命名传感器'
+  const code = item.deviceCode || '-'
+  const bluetooth = item.bluetoothName || '未配置蓝牙名'
+  return `${name} / ${code} / ${bluetooth}`
+}
+
+function submitBindDevice() {
+  if (!bindForm.value.deviceId) {
+    proxy.$modal.msgWarning("请选择蓝牙传感器")
+    return
+  }
+  updateEquipment({
+    equipmentId: bindForm.value.equipmentId,
+    deviceId: bindForm.value.deviceId
+  }).then(() => {
+    proxy.$modal.msgSuccess("绑定成功")
+    bindOpen.value = false
+    getList()
+  })
 }
 
 function handleFilterSessions(row) {
