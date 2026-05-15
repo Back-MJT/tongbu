@@ -23,14 +23,14 @@
       <view class="scan-icon">📷</view>
       <view class="scan-info">
         <text class="scan-title">扫码开始训练</text>
-        <text class="scan-desc">扫描器械二维码后，自动连接该器械绑定的传感器</text>
+        <text class="scan-desc">扫描器械二维码后，自动匹配绑定传感器并开始记录</text>
       </view>
       <text class="scan-arrow">›</text>
     </view>
 
     <view class="demo-card" @tap="useCurrentEquipment">
-      <text class="demo-title">暂未贴二维码：使用当前器械</text>
-      <text class="demo-desc">直接加载 EQ-000001，并自动连接后台绑定的传感器，用于先保证训练流程正常</text>
+      <text class="demo-title">使用当前器械</text>
+      <text class="demo-desc">现场暂未扫码时，可先使用默认器械继续完成训练记录</text>
     </view>
 
     <view v-if="resolvedEquipment" class="resolved-card">
@@ -108,12 +108,12 @@
         <view class="finish-btn" @tap="finishSession">结束训练并保存</view>
       </view>
       <view v-if="connectionStatus !== 'connected'" class="session-actions">
-        <view class="simulate-btn" @tap="simulateTrainingSession">开发调试：模拟一组训练</view>
+        <view class="simulate-btn" @tap="simulateTrainingSession">暂不连接，手动记录一组</view>
       </view>
     </view>
 
-    <!-- BLE扫描兜底入口 -->
-    <view class="section-title">传感器连接兜底</view>
+    <!-- BLE扫描入口 -->
+    <view class="section-title">传感器连接</view>
 
     <!-- BLE扫描按钮 -->
     <view class="ble-scan-btn" @tap="toggleBleScan" :class="{ scanning: isScanning }">
@@ -124,7 +124,7 @@
     <!-- 扫描结果列表 -->
     <view v-if="isScanning || foundDevices.length > 0" class="scan-result-card">
       <view class="result-header">
-        <text class="result-title">调试扫描：找到 {{ foundDevices.length }} 个设备</text>
+        <text class="result-title">附近传感器：找到 {{ foundDevices.length }} 个设备</text>
         <text v-if="isScanning" class="result-scanning">扫描中</text>
       </view>
 
@@ -152,7 +152,7 @@
 
       <!-- 扫描中动画 -->
       <view v-if="isScanning" class="scanning-tips">
-        <text>正在显示所有附近 BLE 设备。若列表为空，请检查手机蓝牙、微信权限和传感器供电。</text>
+        <text>若列表为空，请检查手机蓝牙、微信权限和传感器供电，并尽量靠近器械。</text>
       </view>
     </view>
 
@@ -184,12 +184,12 @@
 
     <!-- 帮助说明 -->
     <view class="help-card">
-      <text class="help-title">找不到设备？</text>
+      <text class="help-title">连接不上？</text>
       <view class="help-list">
         <text class="help-item">1. 确保设备已通电并处于广播状态</text>
         <text class="help-item">2. 确保手机蓝牙已开启</text>
         <text class="help-item">3. 尝试靠近设备后重新扫描</text>
-        <text class="help-item">4. 建议先扫码器械，再连接对应 GY-BLE25T</text>
+        <text class="help-item">4. 建议先扫码器械，再连接对应传感器</text>
       </view>
     </view>
   </view>
@@ -651,7 +651,7 @@ export default defineComponent({
     async function simulateTrainingSession() {
       console.log('[DeviceBinding] simulate session tapped');
       if (!resolvedEquipment.value) {
-        wx.showToast({ title: '请先识别器械', icon: 'none' });
+        wx.showToast({ title: '请先扫码或使用当前器械', icon: 'none' });
         return;
       }
 
@@ -659,7 +659,7 @@ export default defineComponent({
       const simulatedSets = [
         { setNo: 1, reps: Number(selectedTask.value?.targetReps || 12), durationSec: 45 },
       ];
-      wx.showLoading({ title: '保存模拟训练...' });
+      wx.showLoading({ title: '保存训练记录...' });
       try {
         const result = await submitTrainingSession({
           equipmentCode: resolvedEquipment.value.equipmentCode,
@@ -681,13 +681,13 @@ export default defineComponent({
         wx.hideLoading();
         bindResult.value = {
           type: 'success',
-          message: `模拟训练已保存，记录编号 ${result.data.sessionId}`,
+          message: `训练记录已保存，记录编号 ${result.data.sessionId}`,
         };
         showSavedActions();
       } catch (e) {
         wx.hideLoading();
         console.error('[DeviceBinding] simulate session failed', e);
-        wx.showToast({ title: '模拟训练保存失败', icon: 'none' });
+        wx.showToast({ title: '训练记录保存失败', icon: 'none' });
       }
     }
 

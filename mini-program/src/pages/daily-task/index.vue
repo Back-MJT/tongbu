@@ -7,7 +7,10 @@
     <!-- 页面头部 -->
     <view class="page-header">
       <text class="page-title">今日训练</text>
-      <text class="date">{{ today }}</text>
+      <view class="page-meta">
+        <text class="date">{{ today }}</text>
+        <text class="refresh-link" @tap="loadDailyTask">{{ loading ? '同步中' : '刷新' }}</text>
+      </view>
     </view>
 
     <!-- 训练状态卡片 -->
@@ -34,6 +37,9 @@
       <view class="exercise-goal" v-if="exerciseGoal">
         <text class="goal-label">🎯 {{ exerciseGoal }}</text>
       </view>
+      <view class="venue-action" v-if="!hasVenue" @tap="goHome">
+        <text>去首页选择场馆</text>
+      </view>
     </view>
 
     <!-- AI训练建议 (AE算法) -->
@@ -51,7 +57,7 @@
     </view>
 
     <!-- 训练任务列表 -->
-    <view class="tasks-section">
+    <view class="tasks-section" v-if="tasks.length > 0">
       <text class="section-title">训练任务</text>
       <view class="task-list">
         <view
@@ -115,12 +121,21 @@
       <text class="empty-icon">🏋️</text>
       <text class="empty-title">暂无今日训练任务</text>
       <text class="empty-desc">{{ loadError || '选择场馆后自动获取今日训练任务' }}</text>
+      <view class="empty-actions">
+        <view class="empty-action primary" @tap="loadDailyTask">
+          <text>重新加载</text>
+        </view>
+        <view class="empty-action" @tap="goHome">
+          <text>选择场馆</text>
+        </view>
+      </view>
     </view>
   </view>
 </template>
 
 <script>
 import { defineComponent, ref, computed, onMounted } from 'vue';
+import { useDidShow } from '@tarojs/taro';
 import {
   getCurrentVenue,
   getMiniprogramPrescription,
@@ -145,11 +160,44 @@ export default defineComponent({
     const venueId = ref('');
     const exerciseType = ref('strength');
 
-    onMounted(async () => {
+    function initToday() {
       const now = new Date();
       today.value = `${now.getMonth() + 1}月${now.getDate()}日 ${['日','一','二','三','四','五','六'][now.getDay()]}`;
+    }
+
+    onMounted(async () => {
+      initToday();
+      await loadDailyTask();
+    });
+
+    useDidShow(() => {
+      const token = wx.getStorageSync('auth_token');
+      const loginType = wx.getStorageSync('login_type');
+      if (!token && loginType !== 'demo') {
+        wx.reLaunch({ url: '/pages/login/index' });
+        return;
+      }
+      initToday();
+      loadDailyTask();
+    });
+
+    function resetPlanState() {
+      tasks.value = [];
+      completedSets.value = 0;
+      completedReps.value = 0;
+      totalSets.value = 0;
+      totalReps.value = 0;
+      aiSuggestion.value = '';
+      coachingReasoning.value = '';
+      exerciseGoal.value = '';
+      algoVersion.value = '';
+      healthTips.value = [];
+    }
+
+    async function loadDailyTask() {
       loading.value = true;
       loadError.value = '';
+      resetPlanState();
 
       try {
         venueId.value = wx.getStorageSync('current_venue_id') || '';
@@ -169,7 +217,6 @@ export default defineComponent({
         }
         if (!venueId.value) {
           loadError.value = '请先在首页选择场馆';
-          tasks.value = [];
           return;
         }
 
@@ -200,13 +247,14 @@ export default defineComponent({
             totalReps.value = tasks.value.reduce((sum, t) => sum + (t.targetReps || 0), 0);
             completedSets.value = rx.completedSessions || 0;
             completedReps.value = rx.totalReps || 0;
+            if (tasks.value.length === 0) {
+              loadError.value = '当前场馆暂未配置今日训练任务';
+            }
           }
         } catch (e) {
           console.warn('[DailyTask] prescription failed', e);
-          tasks.value = [];
-          totalSets.value = 0;
-          totalReps.value = 0;
-          loadError.value = '训练方案加载失败，请检查登录状态和网络后重试';
+          resetPlanState();
+          loadError.value = '后台连接异常，训练方案暂未同步，请重试';
         }
       } catch (err) {
         console.error('[DailyTask] Load failed', err);
@@ -214,7 +262,7 @@ export default defineComponent({
       } finally {
         loading.value = false;
       }
-    });
+    }
 
     const progressPercent = computed(() => {
       if (totalSets.value === 0) return 0;
@@ -228,9 +276,14 @@ export default defineComponent({
     });
 
     const sessionStatusText = computed(() => {
+      if (!hasVenue.value) return '请选择场馆';
       if (completedSets.value === 0) return '等待开始';
       if (completedSets.value >= totalSets.value) return '今日已完成 ✓';
       return '训练中';
+    });
+
+    const hasVenue = computed(() => {
+      return !!venueId.value;
     });
 
     function onTaskClick(task) {
@@ -245,6 +298,10 @@ export default defineComponent({
         `targetLoadKg=${encodeURIComponent(task.targetLoadKg || '')}`,
       ].join('&');
       wx.navigateTo({ url: `/pages/device-binding/index?${params}` });
+    }
+
+    function goHome() {
+      wx.switchTab({ url: '/pages/home/index' });
     }
 
     function getIntensityClass(label) {
@@ -275,8 +332,11 @@ export default defineComponent({
       progressPercent,
       sessionStatusClass,
       sessionStatusText,
+      hasVenue,
+      loadDailyTask,
       onTaskClick,
       getIntensityClass,
+      goHome,
     };
   },
 });
@@ -302,6 +362,16 @@ export default defineComponent({
 .date {
   font-size: 26rpx;
   color: #999;
+}
+.page-meta {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.refresh-link {
+  font-size: 24rpx;
+  color: #4A90E2;
+  font-weight: 600;
 }
 .session-card {
   background: #fff;
@@ -365,6 +435,18 @@ export default defineComponent({
   font-size: 26rpx;
   color: #4A90E2;
   font-weight: 500;
+}
+.venue-action {
+  margin-top: 16rpx;
+  height: 72rpx;
+  border-radius: 36rpx;
+  background: #eef7ff;
+  color: #2f80d1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 600;
 }
 .ai-suggestion-card {
   background: linear-gradient(135deg, #f0f7ff, #e8f4ff);
@@ -540,5 +622,30 @@ export default defineComponent({
 .empty-desc {
   font-size: 26rpx;
   color: #999;
+  line-height: 1.5;
+  display: block;
+  margin-bottom: 28rpx;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 18rpx;
+}
+.empty-action {
+  min-width: 180rpx;
+  height: 72rpx;
+  padding: 0 28rpx;
+  border-radius: 36rpx;
+  background: #eef7ff;
+  color: #2f80d1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+.empty-action.primary {
+  background: #4A90E2;
+  color: #fff;
 }
 </style>

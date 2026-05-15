@@ -33,9 +33,9 @@ interface EnvConfig {
 
 const configs: Record<string, EnvConfig> = {
   development: {
-    apiBase: 'https://api.black-mjt.cn',
-    ieBase: 'https://api.black-mjt.cn',
-    wsUrl: 'wss://api.black-mjt.cn/ws',
+    apiBase: localDevConfig.apiBase || 'https://api.black-mjt.cn',
+    ieBase: localDevConfig.ieBase || localDevConfig.apiBase || 'https://api.black-mjt.cn',
+    wsUrl: localDevConfig.wsUrl || 'wss://api.black-mjt.cn/ws',
     demoMode: false,
     version: '1.0.0-dev',
     logLevel: 'debug',

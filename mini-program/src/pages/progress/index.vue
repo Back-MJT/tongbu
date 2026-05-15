@@ -7,7 +7,12 @@
     <!-- 页面头部 -->
     <view class="page-header">
       <text class="page-title">训练进度</text>
-      <text class="period-label" @tap="refreshProgress">近30天 · 刷新</text>
+      <text class="period-label" @tap="refreshProgress">{{ loading ? '同步中...' : '近30天 · 刷新' }}</text>
+    </view>
+
+    <view class="error-banner" v-if="loadError">
+      <text class="error-text">{{ loadError }}</text>
+      <text class="error-action" @tap="refreshProgress">重试</text>
     </view>
 
     <!-- 概览统计卡片 -->
@@ -128,7 +133,7 @@
       <view v-if="hasMore" class="load-more" @tap="loadMoreHistory">
         <text>{{ loadingMore ? '加载中...' : '加载更多' }}</text>
       </view>
-      <view v-else class="no-more">
+      <view v-else-if="historyRecords.length > 0" class="no-more">
         <text>— 已加载全部 —</text>
       </view>
     </view>
@@ -141,7 +146,7 @@
         <view class="empty-bar blue"></view>
       </view>
       <text class="empty-title">暂无训练记录</text>
-      <text class="empty-desc">完成一次器械训练后，这里会显示趋势、组数和历史表现。</text>
+      <text class="empty-desc">{{ loadError || '完成一次器械训练后，这里会显示趋势、组数和历史表现。' }}</text>
       <view class="empty-action" @tap="goTraining">
         <text>去开始训练</text>
       </view>
@@ -158,6 +163,7 @@ export default defineComponent({
   setup() {
     const loading = ref(true);
     const loadingMore = ref(false);
+    const loadError = ref('');
     const streakDays = ref(0);
     const complianceRate = ref(0);
     const totalSessions = ref(0);
@@ -175,23 +181,34 @@ export default defineComponent({
     const pageSize = 10;
 
     onMounted(async () => {
+      await loadProgress();
+    });
+
+    async function loadProgress(showSuccess = false) {
       loading.value = true;
+      loadError.value = '';
       try {
         await Promise.all([loadUserStats(), loadHistory(true)]);
         computeStatsFromHistory();
         computeWeekDays();
+        if (showSuccess && !loadError.value) {
+          wx.showToast({ title: '已刷新', icon: 'success' });
+        } else if (showSuccess && loadError.value) {
+          wx.showToast({ title: '刷新失败', icon: 'none' });
+        }
       } catch (err) {
         console.error('[Progress] Load failed', err);
         if (isDemoMode()) {
           fillMockData();
         } else {
           resetProgressData();
+          loadError.value = '后台连接异常，训练进度暂未同步';
           wx.showToast({ title: '进度加载失败', icon: 'none' });
         }
       } finally {
         loading.value = false;
       }
-    });
+    }
 
     // 修复：Tab页切换时 useDidShow 会触发，重新加载数据
     useDidShow(() => {
@@ -201,8 +218,7 @@ export default defineComponent({
         wx.reLaunch({ url: '/pages/login/index' });
         return;
       }
-      // 刷新用户统计数据（不重置历史列表）
-      loadUserStats().catch(e => console.warn('[Progress] refresh user stats failed', e));
+      loadProgress().catch(e => console.warn('[Progress] refresh data failed', e));
     });
 
     async function loadUserStats() {
@@ -233,6 +249,7 @@ export default defineComponent({
         doneTasks.value = 0;
         missedTasks.value = 0;
         badges.value = [];
+        loadError.value = loadError.value || '后台连接异常，用户统计暂未同步';
       }
     }
 
@@ -253,6 +270,9 @@ export default defineComponent({
         historyRecords.value = isDemoMode() ? getMockHistory() : [];
         historyTotal.value = historyRecords.value.length;
         hasMore.value = false;
+        if (!isDemoMode()) {
+          loadError.value = loadError.value || '后台连接异常，训练记录暂未同步';
+        }
       }
     }
 
@@ -433,18 +453,7 @@ export default defineComponent({
     }
 
     async function refreshProgress() {
-      loading.value = true;
-      try {
-        await Promise.all([loadUserStats(), loadHistory(true)]);
-        computeStatsFromHistory();
-        computeWeekDays();
-        wx.showToast({ title: '已刷新', icon: 'success' });
-      } catch (e) {
-        console.error('[Progress] refresh failed', e);
-        wx.showToast({ title: '刷新失败', icon: 'none' });
-      } finally {
-        loading.value = false;
-      }
+      await loadProgress(true);
     }
 
     function onRecordTap(record) {
@@ -474,13 +483,14 @@ export default defineComponent({
         : '';
       wx.navigateTo({
         url: `/pages/device-binding/index${query}`,
-        fail: () => wx.switchTab({ url: '/pages/training/index' }),
+        fail: () => wx.switchTab({ url: '/pages/daily-task/index' }),
       });
     }
 
     return {
       loading,
       loadingMore,
+      loadError,
       streakDays,
       complianceRate,
       totalSessions,
@@ -526,6 +536,27 @@ export default defineComponent({
   background: #f0f0f0;
   padding: 6rpx 16rpx;
   border-radius: 20rpx;
+}
+.error-banner {
+  background: #fff7e6;
+  border: 1rpx solid #ffd591;
+  border-radius: 14rpx;
+  color: #ad6800;
+  font-size: 26rpx;
+  line-height: 1.5;
+  padding: 20rpx 24rpx;
+  margin-bottom: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.error-text {
+  flex: 1;
+}
+.error-action {
+  flex-shrink: 0;
+  color: #2563eb;
+  font-weight: 700;
 }
 .overview-card {
   background: linear-gradient(135deg, #2563eb, #13b5a5);

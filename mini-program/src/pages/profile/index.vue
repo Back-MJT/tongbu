@@ -28,6 +28,11 @@
       </view>
     </view>
 
+    <view class="error-banner" v-if="loadError">
+      <text class="error-text">{{ loadError }}</text>
+      <text class="error-action" @tap="loadProfileData">重试</text>
+    </view>
+
     <!-- 设备绑定区域 -->
     <view class="section-card">
       <view class="section-header">
@@ -64,7 +69,7 @@
       <view v-else class="no-device" @tap="goDeviceBinding">
         <text class="no-device-icon">📱</text>
         <text class="no-device-text">暂未绑定设备</text>
-        <text class="no-device-hint">点击添加设备开始训练</text>
+        <text class="no-device-hint">{{ loadError ? '设备暂未同步，可重试或直接添加' : '点击添加设备开始训练' }}</text>
       </view>
     </view>
 
@@ -144,6 +149,7 @@ export default defineComponent({
   setup() {
     const userInfo = ref(null);
     const devices = ref([]);
+    const loadError = ref('');
     const stats = ref({ totalSessions: 0, totalSets: 0, totalDurationMin: 0, peakVolumeKg: 0 });
     const stageDefs = [
       { key: 'beginner', name: '适应期', desc: '建立训练习惯' },
@@ -169,11 +175,19 @@ export default defineComponent({
     });
 
     async function loadProfileData() {
+      loadError.value = '';
       try {
         const [userRes, devRes] = await Promise.all([
-          getCurrentUser().catch(() => ({ data: null })),
-          getMyDevices().catch(() => ({ data: [] })),
+          getCurrentUser().catch((error) => ({ data: null, error })),
+          getMyDevices().catch((error) => ({ data: [], error })),
         ]);
+        const failedParts = [
+          userRes.error ? '用户信息' : '',
+          devRes.error ? '设备列表' : '',
+        ].filter(Boolean);
+        if (failedParts.length) {
+          loadError.value = `后台连接异常，${failedParts.join('、')}暂未同步`;
+        }
         userInfo.value = userRes.data || getEmptyUser();
         const localAvatar = wx.getStorageSync('avatar_url');
         if (localAvatar) {
@@ -187,13 +201,20 @@ export default defineComponent({
         } else {
           devices.value = [];
         }
-        const statRes = await getMyTrainingStats();
-        stats.value = normalizeStats(statRes.data);
+        try {
+          const statRes = await getMyTrainingStats();
+          stats.value = normalizeStats(statRes.data);
+        } catch (statsError) {
+          console.warn('[Profile] getMyTrainingStats failed', statsError);
+          stats.value = { totalSessions: 0, totalSets: 0, totalDurationMin: 0, peakVolumeKg: 0 };
+          loadError.value = loadError.value || '后台连接异常，训练数据暂未同步';
+        }
       } catch (e) {
         console.warn('[Profile] Load failed', e);
         userInfo.value = userInfo.value || getEmptyUser();
         devices.value = [];
         stats.value = { totalSessions: 0, totalSets: 0, totalDurationMin: 0, peakVolumeKg: 0 };
+        loadError.value = '后台连接异常，个人数据暂未同步';
       }
     }
 
@@ -389,11 +410,13 @@ export default defineComponent({
     return {
       userInfo,
       devices,
+      loadError,
       stats,
       stageLabel,
       stageProgress,
       stageTimeline,
       goDeviceBinding,
+      loadProfileData,
       onUnbindDevice,
       onAvatarClick,
       onMenuItem,
@@ -476,6 +499,27 @@ export default defineComponent({
 .stage-progress-text {
   font-size: 22rpx;
   color: rgba(255,255,255,0.8);
+}
+.error-banner {
+  background: #fff7e6;
+  border: 1rpx solid #ffd591;
+  border-radius: 14rpx;
+  color: #ad6800;
+  font-size: 26rpx;
+  line-height: 1.5;
+  padding: 20rpx 24rpx;
+  margin-bottom: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.error-text {
+  flex: 1;
+}
+.error-action {
+  flex-shrink: 0;
+  color: #4A90E2;
+  font-weight: 700;
 }
 .section-card,
 .stats-card,
