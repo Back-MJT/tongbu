@@ -100,6 +100,10 @@ export const useUserStore = defineStore('user', {
         wx.removeStorageSync('auth_token');
         wx.removeStorageSync('user_id');
         wx.removeStorageSync('nickname');
+        wx.removeStorageSync('avatar_url');
+        wx.removeStorageSync('wechat_openid');
+        wx.removeStorageSync('wechat_openid_masked');
+        wx.removeStorageSync('wechat_unionid');
         wx.removeStorageSync('demo_mode');
         wx.removeStorageSync('login_type');
       } catch (e) {

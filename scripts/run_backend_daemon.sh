@@ -15,6 +15,7 @@ exec env \
   DB_PASSWORD="${DB_PASSWORD:-xindong123}" \
   REDIS_HOST="${REDIS_HOST:-127.0.0.1}" \
   REDIS_PORT="${REDIS_PORT:-6379}" \
+  SERVER_PORT="${SERVER_PORT:-18080}" \
   WECHAT_APPID="${WECHAT_APPID:-wx71e4f887a62bccaa}" \
   WECHAT_SECRET="${WECHAT_SECRET:-}" \
   "$JAVA_BIN" -jar ruoyi-admin/target/ruoyi-admin.jar

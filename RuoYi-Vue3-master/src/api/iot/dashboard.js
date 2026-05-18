@@ -26,3 +26,12 @@ export function getDashboardAlerts(params) {
     params: params
   })
 }
+
+// 更新告警状态
+export function updateDashboardAlert(id, data) {
+  return request({
+    url: '/api/dashboard/alerts/' + id,
+    method: 'put',
+    data: data
+  })
+}

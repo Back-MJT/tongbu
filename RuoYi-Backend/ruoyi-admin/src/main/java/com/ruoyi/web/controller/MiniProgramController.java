@@ -38,6 +38,9 @@ import com.ruoyi.iot.service.IMiniEquipmentService;
 import com.ruoyi.intervention.service.impl.MiniProgramServiceImpl;
 import com.ruoyi.intervention.entity.IntervPrescription;
 import com.ruoyi.intervention.mapper.IntervPrescriptionMapper;
+import com.ruoyi.intervention.service.aline.AlineAnalysisGateway;
+import com.ruoyi.intervention.service.aline.AlineAnalysisRequest;
+import com.ruoyi.intervention.service.aline.AlineAnalysisResult;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -45,17 +48,17 @@ import jakarta.annotation.Resource;
 
 /**
  * 微信小程序 API (XIN-147)
- * 提供小程序专用的轻量接口，代理到 intervention-engine :4001
+ * 提供小程序专用的轻量接口，作为 B Line 场景平台 API。
  *
  * <p>架构:
  * <ul>
- *   <li>小程序前端 → RuoYi-Backend → intervention-engine :4001</li>
- *   <li>RuoYi-Backend 负责认证、多租户、DB持久化</li>
- *   <li>intervention-engine 负责算法（处方生成、健康画像）</li>
+ *   <li>小程序前端 → RuoYi-Backend</li>
+ *   <li>RuoYi-Backend 负责认证、多租户、DB持久化与 B Line 训练闭环</li>
+ *   <li>A Line API 未提供前，仅通过 AlineAnalysisGateway stub 预留接入点</li>
  * </ul>
  *
  * <p>多租户策略: 通过 Authorization header 的 Bearer token 识别用户，
- * JWT token 中包含 userId + tenantId，解析后传递给 intervention-engine。
+ * JWT token 中包含 userId + tenantId，解析后在 B Line 内部传递。
  */
 @Anonymous
 @RestController
@@ -70,6 +73,7 @@ public class MiniProgramController extends BaseController
     private static final String DEMO_USER_ID   = "mp_demo_001";
     private static final int EQUIPMENT_OCCUPANCY_TTL_SECONDS = 90;
     private static final String EQUIPMENT_OCCUPANCY_PREFIX = "xindong:equipment:occupancy:";
+    private static final int MP_AVATAR_MAX_LENGTH = 512;
 
     // ─── Spring Dependencies ──────────────────────────────────────────────────────
 
@@ -103,8 +107,8 @@ public class MiniProgramController extends BaseController
     @Autowired
     private IntervPrescriptionMapper prescriptionMapper;
 
-    @Value("${ruoyi.intervention.engine-url:http://localhost:4001}")
-    private String ieBaseUrl;
+    @Autowired
+    private AlineAnalysisGateway alineAnalysisGateway;
 
     @Value("${wechat.miniapp.appid:}")
     private String wechatMiniAppId;
@@ -167,7 +171,8 @@ public class MiniProgramController extends BaseController
             return AjaxResult.error("微信登录失败，未获取到openid");
         }
 
-        SysUser sysUser = findOrCreateMpUser(session.openid, null, body.get("nickname"), "wechat");
+        String avatar = session.devMode ? null : sanitizeMpAvatar(body.get("avatar"));
+        SysUser sysUser = findOrCreateMpUser(session.openid, null, body.get("nickname"), avatar, "wechat");
         if (sysUser == null) {
             // DB unavailable — fall back to demo token (BD demo mode)
             log.warn("wxLogin: DB unavailable, returning demo token");
@@ -189,7 +194,20 @@ public class MiniProgramController extends BaseController
         data.put("userId", String.valueOf(sysUser.getUserId()));
         data.put("tenantId", sysUser.getTenantId());
         data.put("isDemo", false);
+        String nickname = sysUser.getNickName();
+        boolean hasCustomNickname = hasCustomNickname(nickname);
+        data.put("nickname", hasCustomNickname ? nickname : "");
+        data.put("needsProfileSetup", !hasCustomNickname);
+        data.put("avatar", sysUser.getAvatar() != null ? sysUser.getAvatar() : "");
+        data.put("openId", session.openid);
+        data.put("wechatOpenId", session.openid);
+        data.put("wechatOpenIdMasked", maskOpenid(session.openid));
         data.put("openid", maskOpenid(session.openid));
+        if (!StringUtils.isEmpty(session.unionid)) {
+            data.put("unionId", session.unionid);
+            data.put("wechatUnionId", session.unionid);
+        }
+        data.put("wechatSessionSource", session.devMode ? "dev" : "wechat");
         return AjaxResult.success("登录成功", data);
     }
 
@@ -214,7 +232,7 @@ public class MiniProgramController extends BaseController
         // TODO (production): validate verifyCode against SMS gateway
 
         // Find or create user by phone number
-        SysUser sysUser = findOrCreateMpUser(null, phone, null, "phone");
+        SysUser sysUser = findOrCreateMpUser(null, phone, null, null, "phone");
         if (sysUser == null) {
             // DB unavailable — demo mode
             log.warn("phoneLogin: DB unavailable, returning demo token");
@@ -707,7 +725,7 @@ public class MiniProgramController extends BaseController
      * 今日训练进度
      * GET /api/training/progress/today
      *
-     * <p>优先使用 interv_session 表实时数据，fallback 到 intervention-engine
+     * <p>优先使用 interv_session 表实时数据，失败时返回 B Line 本地降级数据。
      */
     @GetMapping("/training/progress/today")
     public AjaxResult getTodayProgress(
@@ -734,17 +752,8 @@ public class MiniProgramController extends BaseController
             Map<String, Object> progress = miniProgramService.getTodayProgress(ctx.userId, ctx.tenantId);
             return AjaxResult.success(progress);
         } catch (Exception e) {
-            log.warn("getTodayProgress: miniProgramService failed for userId={}, fallback to IE",
+            log.warn("getTodayProgress: miniProgramService failed for userId={}, fallback to local defaults",
                      ctx.userId, e.getMessage());
-            // Fallback to intervention-engine
-            Integer age = ctx.userInfo != null ? (Integer) ctx.userInfo.get("age") : 35;
-            String deviceType = ctx.userInfo != null && ctx.userInfo.get("deviceType") != null
-                    ? (String) ctx.userInfo.get("deviceType") : "strength_station";
-            Map<String, Object> prescription = callIePrescription(
-                    ctx.getUserIdStr(), age, deviceType, null, 0, ctx.tenantId, ctx.isDemo);
-            if (prescription != null) {
-                return AjaxResult.success(prescription);
-            }
             Map<String, Object> fallback = new LinkedHashMap<>();
             fallback.put("completedSessions", 0);
             fallback.put("plannedSessions", 4);
@@ -802,10 +811,10 @@ public class MiniProgramController extends BaseController
      * 获取小程序运动处方 (AI个性化方案)
      * POST /api/training/prescription
      *
-     * <p>实时从 intervention-engine :4001 获取，基于AE算法(XIN-120)
-     * 串联: 小程序 → RuoYi-Backend → intervention-engine → DB持久化
+     * <p>由 B Line 后端生成或读取后台分配计划，不依赖未提供的 A Line API。
+     * 串联: 小程序 → RuoYi-Backend → B Line DB/规则处方
      *
-     * <p>多租户: tenantId 通过 Authorization token 解析，传递给 intervention-engine
+     * <p>多租户: tenantId 通过 Authorization token 解析，并在 B Line 内部隔离。
      */
     @PostMapping("/training/prescription")
     public AjaxResult getPrescription(
@@ -841,6 +850,52 @@ public class MiniProgramController extends BaseController
             }
         }
         return AjaxResult.success(prescription);
+    }
+
+    /**
+     * 获取指定设备类型的训练任务模板
+     * POST /api/mini/device-tasks
+     *
+     * <p>兼容早期小程序 device-tasks API；当前由 B Line/RuoYi 本地规则生成，
+     * 不再直连独立 intervention-engine 服务。
+     */
+    @PostMapping("/mini/device-tasks")
+    public AjaxResult getMiniDeviceTasks(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody Map<String, Object> body) {
+        AuthContext ctx = resolveAuth(auth);
+        if (ctx == null) return AjaxResult.error(401, "未登录");
+
+        String deviceType = stringValue(firstPresent(body, "device_type", "deviceType"), "strength_station");
+        int age = longValue(firstPresent(body, "age"), 30L).intValue();
+
+        List<Map<String, Object>> tasks = new ArrayList<>();
+        if ("body_composition".equals(deviceType) || "body_fat_scale".equals(deviceType) || "scale".equals(deviceType)) {
+            tasks.add(deviceExerciseTask(1, "身体成分测量", "body_composition", 1, 1, 0.0, 30,
+                    "低", "站稳后完成一次测量，作为身体引擎后续输入。"));
+        } else if ("treadmill".equals(deviceType) || "rowing".equals(deviceType) || "cycling".equals(deviceType)) {
+            tasks.add(deviceExerciseTask(1, "低强度热身", "warmup", 1, 5, 0.0, 60,
+                    "低", "先完成5分钟热身，观察主观疲劳。"));
+            tasks.add(deviceExerciseTask(2, cardioExerciseName(deviceType), deviceType, 1, age >= 60 ? 10 : 15, 0.0, 90,
+                    age >= 60 ? "低中" : "中等", "保持可对话强度，不追求速度。"));
+        } else {
+            tasks.add(deviceExerciseTask(1, getExerciseNameByDevice(deviceType), getExerciseType(deviceType),
+                    age >= 60 ? 2 : 3, age >= 60 ? 10 : 12, defaultLoadForEquipment(deviceType),
+                    age >= 60 ? 90 : 75, age >= 60 ? "低中" : "中等", "扫码器械二维码后开始，保持动作轨迹稳定。"));
+            tasks.add(deviceExerciseTask(2, "辅助稳定训练", "stability",
+                    2, 10, 0.0, 60, "低", "动作放慢，优先保证完整幅度和稳定呼吸。"));
+            tasks.add(deviceExerciseTask(3, "放松拉伸", "mobility",
+                    1, 6, 0.0, 45, "低", "训练后做轻量拉伸，记录疼痛或不适。"));
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("device_type", deviceType);
+        result.put("tasks", tasks);
+        result.put("total_exercises", tasks.size());
+        result.put("muscle_groups", muscleGroupsForDevice(deviceType));
+        result.put("source", "ruoyi_b_line");
+        result.put("tenantId", ctx.tenantId);
+        return AjaxResult.success(result);
     }
 
     /**
@@ -883,6 +938,8 @@ public class MiniProgramController extends BaseController
             result.put("savedSets", sets.size());
             result.put("fallback", true);
             result.put("userId", DEMO_USER_ID);
+            attachAlineAnalysis(result, ctx, body, exerciseType, completedSets, totalReps,
+                    totalVolume, durationMin, equipmentCode, deviceCode, stage, sets);
             return AjaxResult.success("训练记录已保存", result);
         }
 
@@ -904,6 +961,8 @@ public class MiniProgramController extends BaseController
                     ctx.userId, ctx.tenantId, occupiedDeviceId,
                     equipmentCode, deviceCode, exerciseType,
                     completedSets, totalReps, totalVolume, durationMin, stage, sets);
+            attachAlineAnalysis(result, ctx, body, exerciseType, completedSets, totalReps,
+                    totalVolume, durationMin, equipmentCode, deviceCode, stage, sets);
             if (!StringUtils.isEmpty(equipmentCode)) {
                 redisCache.deleteObject(occupancyKey(ctx.tenantId, equipmentCode));
             }
@@ -920,6 +979,8 @@ public class MiniProgramController extends BaseController
                 result.put("status", "recorded");
                 result.put("savedSets", sets.size());
                 result.put("fallback", true);
+                attachAlineAnalysis(result, ctx, body, exerciseType, completedSets, totalReps,
+                        totalVolume, durationMin, equipmentCode, deviceCode, stage, sets);
                 return AjaxResult.success("训练记录已保存", result);
             }
             return AjaxResult.error("训练记录保存失败: " + e.getMessage());
@@ -927,61 +988,42 @@ public class MiniProgramController extends BaseController
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // Intervention-Engine Communication
+    // A Line Placeholder / B Line Analysis Gateway
     // ═══════════════════════════════════════════════════════════════════════════════
 
-    /**
-     * 调用 intervention-engine :4001 生成运动处方
-     *
-     * <p>多租户实现: tenantId 作为 X-Tenant-Id header 传递给 :4001，
-     * 让干预引擎能够区分不同租户的用户画像和处方数据。
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> callIePrescription(
-            String userId, int age, String deviceType,
-            Integer sessionsLast30Days, int restingHr,
-            Long tenantId, boolean isDemo) {
+    private void attachAlineAnalysis(Map<String, Object> result, AuthContext ctx, Map<String, Object> body,
+            String exerciseType, Integer completedSets, Integer totalReps, Double totalVolume,
+            Integer durationMin, String equipmentCode, String deviceCode, String stage,
+            List<Map<String, Object>> sets) {
         try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("user_id", userId);
-            payload.put("age", age);
-            payload.put("gender", "未指定");
-            payload.put("device_type", deviceType != null ? deviceType : "strength_station");
-            payload.put("sessions_last_30_days",
-                    sessionsLast30Days != null ? sessionsLast30Days : 0);
-            payload.put("resting_hr", restingHr > 0 ? restingHr : null);
-            payload.put("hypertension", false);
-            payload.put("cardiovascular_risk", false);
-            payload.put("sedentary", false);
-            payload.put("overweight", false);
-            payload.put("high_stress", false);
+            AlineAnalysisRequest request = new AlineAnalysisRequest();
+            request.setTenantId(ctx.tenantId);
+            request.setUserId(ctx.isDemo ? DEMO_USER_ID : ctx.getUserIdStr());
+            request.setSessionId(stringValue(result.get("sessionId"), null));
+            request.setTaskId(stringValue(firstPresent(body, "taskId", "task_id"), null));
+            request.setPrescriptionId(stringValue(firstPresent(body, "prescriptionId", "prescription_id"), null));
+            request.setEquipmentCode(equipmentCode);
+            request.setDeviceCode(deviceCode);
+            request.setExerciseType(exerciseType);
+            request.setCompletedSets(completedSets);
+            request.setTotalReps(totalReps);
+            request.setDurationMin(durationMin);
+            request.setTotalVolumeKg(totalVolume);
+            request.setSets(sets);
+            request.setSource("b_line");
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            // Multi-tenant: pass tenantId to intervention-engine
-            if (tenantId != null) {
-                headers.set("X-Tenant-Id", String.valueOf(tenantId));
-            }
-            // Demo mode signal
-            if (isDemo) {
-                headers.set("X-Demo-Mode", "true");
-            }
-
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, headers);
-
-            String url = ieBaseUrl + "/api/miniprogram/prescription";
-            ResponseEntity<Map> resp = restTemplate.exchange(
-                    url, HttpMethod.POST, entity, Map.class);
-
-            if (resp.getBody() != null) {
-                log.debug("callIePrescription: success for userId={}, tenantId={}", userId, tenantId);
-                return resp.getBody();
-            }
+            AlineAnalysisResult analysis = alineAnalysisGateway.createAnalysis(request);
+            result.put("analysisTaskId", analysis.getTaskId());
+            result.put("analysisStatus", analysis.getStatus());
+            result.put("analysisMessage", analysis.getMessage());
+            result.put("aiFeedback", analysis.getAiFeedback());
+            result.put("alineProvider", analysis.getProvider());
         } catch (Exception e) {
-            log.warn("callIePrescription failed for userId={}, tenantId={}: {}",
-                     userId, tenantId, e.getMessage());
+            log.warn("attachAlineAnalysis skipped: sessionId={}, error={}",
+                    result != null ? result.get("sessionId") : null, e.getMessage());
+            result.put("analysisStatus", "unavailable");
+            result.put("analysisMessage", "A Line 分析占位生成失败，训练记录已保存。");
         }
-        return null;
     }
 
     @SuppressWarnings("unchecked")
@@ -1182,13 +1224,13 @@ public class MiniProgramController extends BaseController
      * Find or create a mini-program user.
      * Priority: wechat openid > phone > create new
      */
-    private SysUser findOrCreateMpUser(String wxOpenId, String phone, String nickname, String loginType) {
+    private SysUser findOrCreateMpUser(String wxOpenId, String phone, String nickname, String avatar, String loginType) {
         try {
             if (!StringUtils.isEmpty(wxOpenId)) {
                 String userName = buildWechatUserName(wxOpenId);
                 SysUser existing = userService.selectUserByUserName(userName);
                 if (existing != null) {
-                    return existing;
+                    return syncMpUserProfile(existing, nickname, avatar);
                 }
             }
 
@@ -1199,7 +1241,7 @@ public class MiniProgramController extends BaseController
                 query.setTenantId(1L); // default tenant for now
                 var list = userService.selectUserList(query);
                 if (list != null && !list.isEmpty()) {
-                    return list.get(0);
+                    return syncMpUserProfile(list.get(0), nickname, avatar);
                 }
             }
 
@@ -1209,7 +1251,8 @@ public class MiniProgramController extends BaseController
                     ? buildWechatUserName(wxOpenId)
                     : loginType + "_" + (!StringUtils.isEmpty(phone) ? phone : "unknown"));
             newUser.setNickName(!StringUtils.isEmpty(nickname) ? nickname
-                    : (!StringUtils.isEmpty(phone) ? maskPhone(phone) : "微信用户"));
+                    : (!StringUtils.isEmpty(phone) ? maskPhone(phone) : "用户"));
+            newUser.setAvatar(sanitizeMpAvatar(avatar));
             newUser.setPhonenumber(phone);
             newUser.setTenantId(1L);
             newUser.setDeptId(100L);  // 100 = 昕动智能 root dept
@@ -1227,6 +1270,35 @@ public class MiniProgramController extends BaseController
             log.warn("findOrCreateMpUser failed: {} (DB may be unavailable)", e.getMessage());
         }
         return null;
+    }
+
+    private SysUser syncMpUserProfile(SysUser existing, String nickname, String avatar) {
+        if (existing == null) {
+            return null;
+        }
+
+        boolean changed = false;
+        SysUser update = new SysUser();
+        update.setUserId(existing.getUserId());
+        update.setDeptId(0L);
+        update.setUpdateBy("mini-program");
+
+        if (!StringUtils.isEmpty(nickname) && !nickname.equals(existing.getNickName())) {
+            update.setNickName(nickname);
+            existing.setNickName(nickname);
+            changed = true;
+        }
+        String cleanAvatar = sanitizeMpAvatar(avatar);
+        if (!StringUtils.isEmpty(cleanAvatar) && !cleanAvatar.equals(existing.getAvatar())) {
+            update.setAvatar(cleanAvatar);
+            existing.setAvatar(cleanAvatar);
+            changed = true;
+        }
+
+        if (changed) {
+            userService.updateUserProfile(update);
+        }
+        return existing;
     }
 
     private WechatSession resolveWechatSession(String code) {
@@ -1270,6 +1342,20 @@ public class MiniProgramController extends BaseController
         return openid.substring(0, 4) + "****" + openid.substring(openid.length() - 4);
     }
 
+    private String sanitizeMpAvatar(String avatar) {
+        if (StringUtils.isEmpty(avatar)) {
+            return null;
+        }
+        String value = avatar.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        if (value.length() > MP_AVATAR_MAX_LENGTH) {
+            return value.substring(0, MP_AVATAR_MAX_LENGTH);
+        }
+        return value;
+    }
+
     private static class WechatSession {
         private String openid;
         private String sessionKey;
@@ -1279,9 +1365,12 @@ public class MiniProgramController extends BaseController
 
     private Map<String, Object> buildMpUserInfo(SysUser u) {
         Map<String, Object> info = new LinkedHashMap<>();
+        String nickname = u.getNickName();
+        boolean hasCustomNickname = hasCustomNickname(nickname);
         info.put("userId", String.valueOf(u.getUserId()));
         info.put("tenantId", u.getTenantId());
-        info.put("nickname", u.getNickName());
+        info.put("nickname", hasCustomNickname ? nickname : "");
+        info.put("needsProfileSetup", !hasCustomNickname);
         info.put("avatar", u.getAvatar() != null ? u.getAvatar() : "");
         info.put("phone", !StringUtils.isEmpty(u.getPhonenumber()) ? maskPhone(u.getPhonenumber()) : "");
         info.put("level", 1);
@@ -1290,11 +1379,21 @@ public class MiniProgramController extends BaseController
         info.put("totalSessions", 0);
         info.put("stage", "beginner");
         info.put("stageLabel", "初学期");
-        // TODO: Load health profile from intervention-engine
+        // TODO: Load health profile from RuoYi body-engine adapter when A Line API is ready.
         info.put("age", 30);
         info.put("gender", "未指定");
         info.put("deviceType", "strength_station");
         return info;
+    }
+
+    private boolean hasCustomNickname(String nickname) {
+        if (StringUtils.isEmpty(nickname)) {
+            return false;
+        }
+        String value = nickname.trim();
+        return !"微信用户".equals(value)
+                && !"用户".equals(value)
+                && !"å¾®ä¿¡ç”¨æˆ·".equals(value);
     }
 
     private String maskPhone(String phone) {
@@ -1546,12 +1645,48 @@ public class MiniProgramController extends BaseController
         };
     }
 
+    private Map<String, Object> deviceExerciseTask(int taskId, String exerciseName, String exerciseType,
+            int targetSets, int targetReps, double targetLoadKg, int restSeconds,
+            String intensityLabel, String coachingTip) {
+        Map<String, Object> task = new LinkedHashMap<>();
+        task.put("taskId", taskId);
+        task.put("exerciseName", exerciseName);
+        task.put("exerciseType", exerciseType);
+        task.put("targetSets", targetSets);
+        task.put("targetReps", targetReps);
+        task.put("targetLoadKg", targetLoadKg);
+        task.put("restSeconds", restSeconds);
+        task.put("intensityLabel", intensityLabel);
+        task.put("coachingTip", coachingTip);
+        task.put("status", "pending");
+        return task;
+    }
+
+    private String cardioExerciseName(String deviceType) {
+        return switch (stringValue(deviceType, "treadmill")) {
+            case "rowing", "rowing_machine" -> "划船训练";
+            case "cycling", "spin_bike" -> "骑行训练";
+            default -> "跑步训练";
+        };
+    }
+
+    private List<String> muscleGroupsForDevice(String deviceType) {
+        return switch (stringValue(deviceType, "strength_station")) {
+            case "chest_press", "incline_press" -> List.of("胸部", "肩部", "肱三头肌");
+            case "leg_press", "leg_extension_curl", "squat" -> List.of("股四头肌", "臀部", "腘绳肌");
+            case "rowing", "rowing_machine" -> List.of("背部", "核心", "腿部");
+            case "treadmill", "cycling", "spin_bike" -> List.of("心肺", "腿部");
+            case "body_fat_scale", "body_composition", "scale" -> List.of("身体成分");
+            default -> List.of("全身力量", "核心稳定");
+        };
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════════
-    // Fallback Data (干预引擎不可用时)
+    // Fallback Data (B Line本地规则)
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 构建备用处方 (当 :4001 不可用时)
+     * 构建本地规则处方
      */
     @SuppressWarnings("unchecked")
     private Map<String, Object> buildFallbackPrescription(String userId, String deviceType, int age) {

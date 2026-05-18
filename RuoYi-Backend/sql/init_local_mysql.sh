@@ -13,6 +13,8 @@ MYSQL_PASSWORD="${MYSQL_PASSWORD:-}"
 
 BASE_SQL="$SQL_DIR/ry_20260321.sql"
 IOT_SQL="$SQL_DIR/iot/iot_equipment_mysql.sql"
+TRAINING_PLAN_SQL="$SQL_DIR/iot/iot_training_plan_mysql.sql"
+RUNTIME_FIX_SQL="$SQL_DIR/iot/iot_runtime_fix_mysql.sql"
 IOT_MENU_SQL="$SQL_DIR/iot/iot_admin_menu_mysql.sql"
 
 if ! command -v mysql >/dev/null 2>&1; then
@@ -29,7 +31,9 @@ echo
 echo "==> 将按顺序执行:"
 echo "    1. $BASE_SQL"
 echo "    2. $IOT_SQL"
-echo "    3. $IOT_MENU_SQL"
+echo "    3. $TRAINING_PLAN_SQL"
+echo "    4. $RUNTIME_FIX_SQL"
+echo "    5. $IOT_MENU_SQL"
 echo
 
 MYSQL_CMD=(mysql --default-character-set=utf8mb4 -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USER")
@@ -46,6 +50,12 @@ echo "==> 导入若依基础表"
 echo "==> 导入 IoT / 小程序扩展表"
 "${MYSQL_CMD[@]}" "$MYSQL_DB" < "$IOT_SQL"
 
+echo "==> 导入训练计划 / 干预处方表"
+"${MYSQL_CMD[@]}" "$MYSQL_DB" < "$TRAINING_PLAN_SQL"
+
+echo "==> 应用本地运行兼容修复"
+"${MYSQL_CMD[@]}" "$MYSQL_DB" < "$RUNTIME_FIX_SQL"
+
 echo "==> 导入 IoT 管理端菜单"
 "${MYSQL_CMD[@]}" "$MYSQL_DB" < "$IOT_MENU_SQL"
 
@@ -60,6 +70,8 @@ UNION ALL
 SELECT 'iot_device_binding', COUNT(*) FROM \`$MYSQL_DB\`.iot_device_binding
 UNION ALL
 SELECT 'interv_session', COUNT(*) FROM \`$MYSQL_DB\`.interv_session
+UNION ALL
+SELECT 'interv_prescription', COUNT(*) FROM \`$MYSQL_DB\`.interv_prescription
 UNION ALL
 SELECT 'iot_admin_menus', COUNT(*) FROM \`$MYSQL_DB\`.sys_menu WHERE menu_id IN (2000, 2001, 2002);
 "

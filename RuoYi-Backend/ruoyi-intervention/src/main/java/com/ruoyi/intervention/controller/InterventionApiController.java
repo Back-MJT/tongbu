@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,11 +15,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ruoyi.common.core.domain.AjaxResult;
+import com.ruoyi.intervention.service.aline.AlineAnalysisGateway;
+import com.ruoyi.intervention.service.aline.AlineAnalysisRequest;
+import com.ruoyi.intervention.service.aline.AlineAnalysisResult;
 
 /**
- * A Line 预留接口 - 训练结果 AI 分析
- * Training Result AI Analysis (A Line API Placeholder)
+ * B Line owned A Line placeholder API - training result analysis.
  *
  * <p>这些接口用于：
  * <ul>
@@ -27,14 +29,16 @@ import com.ruoyi.common.core.domain.AjaxResult;
  *   <li>GET /api/intervention/analysis/{sessionId} — 获取训练分析结果</li>
  * </ul>
  *
- * 注意：A Line API 尚未正式接入，此模块实现降级UI逻辑，
- * 网络异常时不阻塞结果查看。
+ * 注意：A Line API 尚未提供，本控制器只调用 B Line 门面与 stub，不做外部 A Line 网络请求。
  */
 @RestController
 @RequestMapping("/api/intervention")
 public class InterventionApiController
 {
     private static final Logger log = LoggerFactory.getLogger(InterventionApiController.class);
+
+    @Autowired
+    private AlineAnalysisGateway alineAnalysisGateway;
 
     /**
      * 获取用户健康档案 / Get user health profile.
@@ -82,32 +86,15 @@ public class InterventionApiController
      * <p>训练提交后调用此接口，触发后端 A Line 分析任务。
      * 前端应展示"分析中"状态，并在5秒内返回结果或状态。
      */
-    @PostMapping("/exercise-prescription")
+    @PostMapping("/analysis")
     public ResponseEntity<Map<String, Object>> submitForAnalysis(
             @RequestBody Map<String, Object> trainingResult)
     {
         log.info("submitForAnalysis: trainingResult={}", trainingResult);
         try
         {
-            String userId = (String) trainingResult.get("userId");
-            String sessionId = (String) trainingResult.get("sessionId");
-            Integer completedSets = (Integer) trainingResult.get("completedSets");
-            Integer totalReps = (Integer) trainingResult.get("totalReps");
-            Integer durationMin = (Integer) trainingResult.get("durationMin");
-
-            // XIN-146: 创建异步分析任务（当前返回模拟数据）
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("taskId", "ANALYSIS-" + System.currentTimeMillis());
-            result.put("sessionId", sessionId);
-            result.put("userId", userId);
-            result.put("status", "processing");
-            result.put("progress", 0);
-            result.put("message", "AI 分析已启动，请在结果页等待");
-
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("success", true);
-            response.put("data", result);
-            return ResponseEntity.ok(response);
+            AlineAnalysisResult result = alineAnalysisGateway.createAnalysis(toAnalysisRequest(trainingResult));
+            return ResponseEntity.ok(success(result.toMap()));
         }
         catch (Exception e)
         {
@@ -117,6 +104,16 @@ public class InterventionApiController
             errorResponse.put("error", "分析任务创建失败");
             return ResponseEntity.ok(errorResponse);
         }
+    }
+
+    /**
+     * Backward compatible alias retained for existing callers.
+     */
+    @PostMapping("/exercise-prescription")
+    public ResponseEntity<Map<String, Object>> submitExercisePrescriptionAlias(
+            @RequestBody Map<String, Object> trainingResult)
+    {
+        return submitForAnalysis(trainingResult);
     }
 
     /**
@@ -134,32 +131,8 @@ public class InterventionApiController
         log.info("getAnalysisResult: sessionId={}, waitForComplete={}", sessionId, waitForComplete);
         try
         {
-            // XIN-146: 当前返回模拟分析结果
-            // 正式接入 A Line API 后，替换为真实调用
-            Map<String, Object> analysis = new LinkedHashMap<>();
-            analysis.put("sessionId", sessionId);
-            analysis.put("status", "completed");
-            analysis.put("progress", 100);
-
-            // AI 分析结果
-            Map<String, Object> aiFeedback = new LinkedHashMap<>();
-            aiFeedback.put("overallScore", 82);
-            aiFeedback.put("strengthLevel", "良好");
-            aiFeedback.put("suggestions", java.util.List.of(
-                "发力节奏稳定，肌肉激活度高",
-                "建议增加离心收缩控制",
-                "下一组可尝试增加2-3次重复"
-            ));
-            aiFeedback.put("warnings", java.util.List.of());
-            aiFeedback.put("nextRecommendation", "保持当前训练强度，注意充分热身");
-
-            analysis.put("aiFeedback", aiFeedback);
-            analysis.put("completedAt", java.time.LocalDateTime.now().toString());
-
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("success", true);
-            response.put("data", analysis);
-            return ResponseEntity.ok(response);
+            AlineAnalysisResult result = alineAnalysisGateway.getAnalysisResult(sessionId);
+            return ResponseEntity.ok(success(result.toMap()));
         }
         catch (Exception e)
         {
@@ -181,16 +154,10 @@ public class InterventionApiController
         log.info("getAnalysisStatus: sessionId={}", sessionId);
         try
         {
-            Map<String, Object> status = new LinkedHashMap<>();
-            status.put("sessionId", sessionId);
-            status.put("status", "completed");
-            status.put("progress", 100);
-            status.put("hasResult", true);
-
-            Map<String, Object> response = new LinkedHashMap<>();
-            response.put("success", true);
-            response.put("data", status);
-            return ResponseEntity.ok(response);
+            AlineAnalysisResult result = alineAnalysisGateway.getAnalysisStatus(sessionId);
+            Map<String, Object> status = result.toMap();
+            status.put("hasResult", result.getAiFeedback() != null);
+            return ResponseEntity.ok(success(status));
         }
         catch (Exception e)
         {
@@ -199,6 +166,93 @@ public class InterventionApiController
             errorResponse.put("success", false);
             errorResponse.put("error", "状态查询失败");
             return ResponseEntity.ok(errorResponse);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private AlineAnalysisRequest toAnalysisRequest(Map<String, Object> body)
+    {
+        body = body != null ? body : java.util.Collections.emptyMap();
+        AlineAnalysisRequest request = new AlineAnalysisRequest();
+        request.setTenantId(longValue(body.get("tenantId")));
+        request.setUserId(stringValue(body.get("userId")));
+        request.setSessionId(stringValue(body.get("sessionId")));
+        request.setTaskId(stringValue(body.get("taskId")));
+        request.setPrescriptionId(stringValue(body.get("prescriptionId")));
+        request.setEquipmentCode(stringValue(body.get("equipmentCode")));
+        request.setDeviceCode(stringValue(body.get("deviceCode")));
+        request.setExerciseType(stringValue(body.get("exerciseType")));
+        request.setCompletedSets(intValue(body.get("completedSets")));
+        request.setTotalReps(intValue(body.get("totalReps")));
+        request.setDurationMin(intValue(body.get("durationMin")));
+        request.setTotalVolumeKg(doubleValue(body.get("totalVolumeKg")));
+        request.setSource("b_line");
+        if (body.get("sets") instanceof java.util.List<?>)
+        {
+            request.setSets((java.util.List<Map<String, Object>>) body.get("sets"));
+        }
+        return request;
+    }
+
+    private Map<String, Object> success(Map<String, Object> data)
+    {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("code", 200);
+        response.put("data", data);
+        return response;
+    }
+
+    private String stringValue(Object value)
+    {
+        return value == null || String.valueOf(value).isBlank() ? null : String.valueOf(value);
+    }
+
+    private Long longValue(Object value)
+    {
+        try
+        {
+            if (value instanceof Number)
+            {
+                return ((Number) value).longValue();
+            }
+            return value == null || String.valueOf(value).isBlank() ? null : Long.valueOf(String.valueOf(value));
+        }
+        catch (Exception ignored)
+        {
+            return null;
+        }
+    }
+
+    private Integer intValue(Object value)
+    {
+        try
+        {
+            if (value instanceof Number)
+            {
+                return ((Number) value).intValue();
+            }
+            return value == null || String.valueOf(value).isBlank() ? null : Integer.valueOf(String.valueOf(value));
+        }
+        catch (Exception ignored)
+        {
+            return null;
+        }
+    }
+
+    private Double doubleValue(Object value)
+    {
+        try
+        {
+            if (value instanceof Number)
+            {
+                return ((Number) value).doubleValue();
+            }
+            return value == null || String.valueOf(value).isBlank() ? null : Double.valueOf(String.valueOf(value));
+        }
+        catch (Exception ignored)
+        {
+            return null;
         }
     }
 }

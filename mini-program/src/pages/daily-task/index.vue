@@ -4,48 +4,60 @@
 -->
 <template>
   <view class="daily-task-page">
-    <!-- 页面头部 -->
-    <view class="page-header">
-      <text class="page-title">今日训练</text>
-      <view class="page-meta">
-        <text class="date">{{ today }}</text>
-        <text class="refresh-link" @tap="loadDailyTask">{{ loading ? '同步中' : '刷新' }}</text>
+    <view class="plan-hero">
+      <view class="page-header">
+        <view>
+          <text class="eyebrow">TODAY PLAN</text>
+          <text class="page-title">今日训练</text>
+        </view>
+        <view class="refresh-pill" @tap="loadDailyTask">{{ loading ? '同步中' : '刷新' }}</view>
       </view>
-    </view>
 
-    <!-- 训练状态卡片 -->
-    <view class="session-card">
-      <view class="session-info">
-        <text class="device-name">{{ venueName || '未选择场馆' }}</text>
-        <text class="session-status" :class="sessionStatusClass">
-          {{ sessionStatusText }}
-        </text>
+      <view class="hero-meta">
+        <text>{{ today }}</text>
+        <text>{{ venueName || '未选择场馆' }}</text>
       </view>
-      <view class="session-progress">
-        <text class="progress-text">
-          <text class="progress-current">{{ completedSets }}</text>
-          <text class="progress-sep">/</text>
-          <text class="progress-total">{{ totalSets }}组</text>
-        </text>
-        <text class="reps-text">{{ completedReps }}次 / {{ totalReps }}次</text>
+
+      <view class="session-card">
+        <view class="session-info">
+          <text class="session-status" :class="sessionStatusClass">{{ sessionStatusText }}</text>
+          <text class="goal-label" v-if="exerciseGoal">{{ exerciseGoal }}</text>
+        </view>
+        <view class="session-progress">
+          <view>
+            <text class="progress-current">{{ completedSets }}</text>
+            <text class="progress-total"> / {{ totalSets }} 组</text>
+          </view>
+          <text class="reps-text">{{ completedReps }} / {{ totalReps }} 次</text>
+        </view>
+        <view class="progress-bar-wrap">
+          <view class="progress-bar" :style="{ width: progressPercent + '%' }"></view>
+        </view>
       </view>
-      <!-- 进度条 -->
-      <view class="progress-bar-wrap">
-        <view class="progress-bar" :style="{ width: progressPercent + '%' }"></view>
-      </view>
-      <!-- 运动目标 -->
-      <view class="exercise-goal" v-if="exerciseGoal">
-        <text class="goal-label">🎯 {{ exerciseGoal }}</text>
-      </view>
+
       <view class="venue-action" v-if="!hasVenue" @tap="goHome">
         <text>去首页选择场馆</text>
       </view>
     </view>
 
-    <!-- AI训练建议 (AE算法) -->
+    <view class="plan-summary">
+      <view class="summary-item">
+        <text class="summary-value">{{ tasks.length }}</text>
+        <text class="summary-label">动作</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{ totalSets }}</text>
+        <text class="summary-label">目标组</text>
+      </view>
+      <view class="summary-item">
+        <text class="summary-value">{{ progressPercent }}%</text>
+        <text class="summary-label">进度</text>
+      </view>
+    </view>
+
     <view class="ai-suggestion-card" v-if="aiSuggestion">
       <view class="ai-header">
-        <text class="ai-icon">💡</text>
+        <text class="ai-icon">AE</text>
         <text class="ai-title">AI训练建议</text>
         <text class="ai-algo" v-if="algoVersion">AE</text>
       </view>
@@ -58,7 +70,10 @@
 
     <!-- 训练任务列表 -->
     <view class="tasks-section" v-if="tasks.length > 0">
-      <text class="section-title">训练任务</text>
+      <view class="section-head">
+        <text class="section-title">训练任务</text>
+        <text class="section-subtitle">按顺序完成，系统会记录真实组数</text>
+      </view>
       <view class="task-list">
         <view
           v-for="(task, index) in tasks"
@@ -68,28 +83,28 @@
           @tap="onTaskClick(task)"
         >
           <view class="task-status-icon">
-            <text v-if="task.status === 'completed'">✓</text>
-            <text v-else-if="task.status === 'in_progress'">▶</text>
-            <text v-else>○</text>
+            <text v-if="task.status === 'completed'">OK</text>
+            <text v-else>{{ index + 1 }}</text>
           </view>
           <view class="task-content">
+            <view class="task-head">
+              <text class="intensity-tag" v-if="task.intensityLabel" :class="getIntensityClass(task.intensityLabel)">
+                {{ task.intensityLabel }}
+              </text>
+              <text class="task-action">
+                <text v-if="task.status === 'completed'" class="tag-done">已完成</text>
+                <text v-else-if="task.status === 'in_progress'" class="tag-active">进行中</text>
+                <text v-else class="tag-pending">开始</text>
+              </text>
+            </view>
             <text class="task-name">{{ task.exerciseName }}</text>
-            <text class="task-detail">
-              {{ task.targetSets }}组 × {{ task.targetReps }}次
-              <text v-if="task.targetLoadKg"> | {{ task.targetLoadKg }}kg</text>
-              <text v-if="task.restSeconds"> | 休{{ task.restSeconds }}s</text>
-            </text>
-            <!-- 教练提示 -->
-            <text class="task-tip" v-if="task.coachingTip">💡 {{ task.coachingTip }}</text>
-            <!-- 强度标签 -->
-            <text class="intensity-tag" v-if="task.intensityLabel" :class="getIntensityClass(task.intensityLabel)">
-              {{ task.intensityLabel }}
-            </text>
-          </view>
-          <view class="task-action">
-            <text v-if="task.status === 'completed'" class="tag-done">已完成</text>
-            <text v-else-if="task.status === 'in_progress'" class="tag-active">进行中</text>
-            <text v-else class="tag-pending">开始</text>
+            <view class="task-metrics">
+              <text>{{ task.targetSets }}组</text>
+              <text>{{ task.targetReps }}次</text>
+              <text v-if="task.targetLoadKg">{{ task.targetLoadKg }}kg</text>
+              <text v-if="task.restSeconds">休{{ task.restSeconds }}s</text>
+            </view>
+            <text class="task-tip" v-if="task.coachingTip">{{ task.coachingTip }}</text>
           </view>
         </view>
       </view>
@@ -104,7 +119,7 @@
         class="tip-card"
       >
         <view class="tip-header">
-          <text class="tip-icon">{{ tip.category === 'nutrition' ? '🍎' : '💪' }}</text>
+          <text class="tip-icon">{{ tip.category === 'nutrition' ? 'NUTR' : 'MOVE' }}</text>
           <text class="tip-title">{{ tip.title }}</text>
         </view>
         <text class="tip-content">{{ tip.content }}</text>
@@ -118,7 +133,7 @@
 
     <!-- 空状态 -->
     <view v-if="!loading && tasks.length === 0" class="empty-state">
-      <text class="empty-icon">🏋️</text>
+      <view class="empty-icon">PLAN</view>
       <text class="empty-title">暂无今日训练任务</text>
       <text class="empty-desc">{{ loadError || '选择场馆后自动获取今日训练任务' }}</text>
       <view class="empty-actions">
@@ -290,6 +305,7 @@ export default defineComponent({
       if (task.status === 'completed') return;
       const params = [
         `taskId=${encodeURIComponent(task.taskId || '')}`,
+        `prescriptionId=${encodeURIComponent(task.prescriptionId || '')}`,
         `exerciseName=${encodeURIComponent(task.exerciseName || '')}`,
         `exerciseType=${encodeURIComponent(task.exerciseType || 'strength')}`,
         `expectedEquipmentCode=${encodeURIComponent(task.equipmentCode || '')}`,
@@ -344,233 +360,336 @@ export default defineComponent({
 
 <style>
 .daily-task-page {
-  padding: 24rpx;
-  background: #f5f5f5;
+  padding: 28rpx 24rpx 56rpx;
+  background: #edf2f7;
   min-height: 100vh;
+  box-sizing: border-box;
+}
+.plan-hero {
+  background: linear-gradient(145deg, #101828, #1f2a44 58%, #173d42);
+  border-radius: 28rpx;
+  padding: 32rpx 30rpx 30rpx;
+  color: #fff;
+  margin-bottom: 18rpx;
+  box-shadow: 0 24rpx 48rpx rgba(16, 24, 40, 0.2);
 }
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24rpx;
+  align-items: flex-start;
+  margin-bottom: 22rpx;
+}
+.eyebrow {
+  display: block;
+  color: rgba(255,255,255,0.58);
+  font-size: 20rpx;
+  font-weight: 900;
+  margin-bottom: 8rpx;
 }
 .page-title {
-  font-size: 40rpx;
-  font-weight: bold;
-  color: #1a1a2e;
+  font-size: 44rpx;
+  font-weight: 900;
+  color: #fff;
+  display: block;
 }
-.date {
-  font-size: 26rpx;
-  color: #999;
-}
-.page-meta {
+.refresh-pill {
+  min-width: 104rpx;
+  height: 56rpx;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,0.12);
+  border: 1rpx solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.88);
+  font-size: 24rpx;
+  font-weight: 800;
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  justify-content: center;
 }
-.refresh-link {
+.hero-meta {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255,255,255,0.66);
   font-size: 24rpx;
-  color: #4A90E2;
-  font-weight: 600;
+  margin-bottom: 24rpx;
 }
 .session-card {
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 32rpx;
-  margin-bottom: 24rpx;
+  background: rgba(255,255,255,0.1);
+  border: 1rpx solid rgba(255,255,255,0.14);
+  border-radius: 24rpx;
+  padding: 26rpx;
 }
 .session-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20rpx;
-}
-.device-name {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
 }
 .session-status {
-  font-size: 26rpx;
+  height: 48rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.86);
+  font-size: 24rpx;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.session-status.pending { color: #999; }
-.session-status.active { color: #4A90E2; }
-.session-status.done { color: #52c41a; }
+.session-status.active { background: rgba(49,212,160,0.18); color: #31d4a0; }
+.session-status.done { background: rgba(49,212,160,0.24); color: #31d4a0; }
 .session-progress {
   display: flex;
   justify-content: space-between;
+  align-items: flex-end;
   margin-bottom: 16rpx;
 }
-.progress-text {
-  font-size: 48rpx;
-  font-weight: bold;
+.progress-current {
+  font-size: 58rpx;
+  font-weight: 900;
+  color: #fff;
 }
-.progress-current { color: #4A90E2; }
-.progress-sep { color: #ccc; }
-.progress-total { color: #1a1a2e; }
-.reps-text {
+.progress-total {
   font-size: 28rpx;
-  color: #666;
-  line-height: 80rpx;
+  color: rgba(255,255,255,0.62);
+  font-weight: 700;
+}
+.reps-text {
+  font-size: 24rpx;
+  color: rgba(255,255,255,0.72);
+  padding-bottom: 10rpx;
 }
 .progress-bar-wrap {
-  height: 12rpx;
-  background: #eee;
-  border-radius: 6rpx;
+  height: 14rpx;
+  background: rgba(255,255,255,0.14);
+  border-radius: 999rpx;
   overflow: hidden;
-  margin-bottom: 16rpx;
 }
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #4A90E2, #6BB5FF);
-  border-radius: 6rpx;
+  background: linear-gradient(90deg, #31d4a0, #63e6be);
+  border-radius: 999rpx;
   transition: width 0.3s ease;
 }
-.exercise-goal {
-  margin-top: 12rpx;
-  padding-top: 12rpx;
-  border-top: 1rpx solid #f0f0f0;
-}
 .goal-label {
-  font-size: 26rpx;
-  color: #4A90E2;
-  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: rgba(255,255,255,0.72);
+  line-height: 1.35;
+  text-align: right;
 }
 .venue-action {
-  margin-top: 16rpx;
+  margin-top: 20rpx;
   height: 72rpx;
-  border-radius: 36rpx;
-  background: #eef7ff;
-  color: #2f80d1;
+  border-radius: 999rpx;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 26rpx;
-  font-weight: 600;
+  font-weight: 800;
+}
+.plan-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+  margin-bottom: 18rpx;
+}
+.summary-item {
+  background: #fff;
+  border-radius: 22rpx;
+  padding: 22rpx 12rpx;
+  text-align: center;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 12rpx 28rpx rgba(20, 38, 70, 0.05);
+}
+.summary-value {
+  display: block;
+  color: #101828;
+  font-size: 36rpx;
+  font-weight: 900;
+  line-height: 1.1;
+}
+.summary-label {
+  display: block;
+  margin-top: 8rpx;
+  color: #7b8794;
+  font-size: 22rpx;
 }
 .ai-suggestion-card {
-  background: linear-gradient(135deg, #f0f7ff, #e8f4ff);
-  border-radius: 16rpx;
+  background: #fff;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
-  border-left: 6rpx solid #4A90E2;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 14rpx 34rpx rgba(20, 38, 70, 0.06);
 }
 .ai-header {
   display: flex;
   align-items: center;
   margin-bottom: 12rpx;
 }
-.ai-icon { font-size: 32rpx; margin-right: 10rpx; }
+.ai-icon {
+  width: 58rpx;
+  height: 40rpx;
+  border-radius: 999rpx;
+  background: #e9fbf6;
+  color: #0f9f7a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20rpx;
+  font-weight: 900;
+  margin-right: 12rpx;
+}
 .ai-title {
   font-size: 28rpx;
-  font-weight: 600;
-  color: #4A90E2;
+  font-weight: 800;
+  color: #101828;
   flex: 1;
 }
 .ai-algo {
   font-size: 20rpx;
   color: #fff;
-  background: #4A90E2;
-  padding: 2rpx 10rpx;
-  border-radius: 10rpx;
+  background: #101828;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
 }
 .ai-content {
   font-size: 28rpx;
-  color: #333;
+  color: #344054;
   line-height: 1.6;
   display: block;
   margin-bottom: 12rpx;
 }
 .ai-reasoning {
-  background: rgba(74, 144, 226, 0.08);
-  border-radius: 12rpx;
-  padding: 14rpx;
+  background: #f5f8fb;
+  border-radius: 18rpx;
+  padding: 18rpx;
 }
 .reasoning-label {
   font-size: 22rpx;
-  color: #4A90E2;
-  font-weight: 600;
+  color: #0f9f7a;
+  font-weight: 800;
   display: block;
   margin-bottom: 4rpx;
 }
 .reasoning-text {
   font-size: 24rpx;
-  color: #666;
+  color: #667085;
   line-height: 1.5;
 }
 .tasks-section { margin-top: 8rpx; }
+.section-head {
+  margin-bottom: 18rpx;
+}
 .section-title {
   font-size: 32rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
   display: block;
-  margin-bottom: 16rpx;
 }
-.task-list {}
+.section-subtitle {
+  display: block;
+  margin-top: 6rpx;
+  color: #7b8794;
+  font-size: 24rpx;
+}
 .task-item {
   background: #fff;
-  border-radius: 12rpx;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 16rpx;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  gap: 20rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 12rpx 28rpx rgba(20, 38, 70, 0.05);
 }
 .task-item.in_progress {
-  border-left: 4rpx solid #4A90E2;
+  border-color: rgba(49, 212, 160, 0.55);
 }
 .task-item.completed {
   opacity: 0.75;
 }
 .task-status-icon {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  background: #f0f0f0;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 20rpx;
+  background: #101828;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 20rpx;
-  font-size: 26rpx;
+  font-size: 24rpx;
+  font-weight: 900;
   flex-shrink: 0;
 }
-.task-item.completed .task-status-icon { background: #e8f5e9; color: #52c41a; }
-.task-item.in_progress .task-status-icon { background: #e3f2fd; color: #4A90E2; }
-.task-content { flex: 1; }
-.task-name {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #1a1a2e;
-  display: block;
-  margin-bottom: 6rpx;
+.task-item.completed .task-status-icon { background: #e9fbf6; color: #0f9f7a; }
+.task-item.in_progress .task-status-icon { background: #13b5a5; color: #fff; }
+.task-content {
+  flex: 1;
+  min-width: 0;
 }
-.task-detail {
-  font-size: 24rpx;
-  color: #999;
+.task-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10rpx;
+  gap: 12rpx;
+}
+.task-name {
+  font-size: 32rpx;
+  font-weight: 900;
+  color: #101828;
   display: block;
-  margin-bottom: 4rpx;
+  margin-bottom: 14rpx;
+}
+.task-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-bottom: 12rpx;
+}
+.task-metrics text {
+  height: 42rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  background: #f2f5f8;
+  color: #475467;
+  font-size: 22rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
 }
 .task-tip {
-  font-size: 22rpx;
-  color: #666;
+  font-size: 24rpx;
+  color: #667085;
   display: block;
-  margin-bottom: 4rpx;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 .intensity-tag {
+  height: 38rpx;
+  padding: 0 14rpx;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   font-size: 20rpx;
-  padding: 2rpx 10rpx;
-  border-radius: 8rpx;
-  display: inline-block;
-  margin-right: 8rpx;
+  font-weight: 800;
 }
-.intensity-tag.intensity-low { background: #e8f5e9; color: #4caf50; }
-.intensity-tag.intensity-medium { background: #fff3e0; color: #ff9800; }
-.intensity-tag.intensity-medium-high { background: #fce4ec; color: #e91e63; }
-.intensity-tag.intensity-high { background: #ffebee; color: #f44336; }
-.task-action { flex-shrink: 0; }
-.tag-done { font-size: 24rpx; color: #52c41a; }
-.tag-active { font-size: 24rpx; color: #4A90E2; font-weight: 600; }
-.tag-pending { font-size: 24rpx; color: #999; }
+.intensity-tag.intensity-low { background: #e9fbf6; color: #0f9f7a; }
+.intensity-tag.intensity-medium { background: #fff7e6; color: #b56a00; }
+.intensity-tag.intensity-medium-high { background: #fff1f3; color: #c01048; }
+.intensity-tag.intensity-high { background: #fee4e2; color: #b42318; }
+.task-action { flex-shrink: 0; font-size: 22rpx; font-weight: 800; }
+.tag-done { color: #0f9f7a; }
+.tag-active { color: #13b5a5; }
+.tag-pending { color: #2563eb; }
 
 /* 健康提示 */
 .health-tips {
@@ -579,20 +698,33 @@ export default defineComponent({
 }
 .tip-card {
   background: #fff;
-  border-radius: 12rpx;
-  padding: 20rpx 24rpx;
-  margin-bottom: 12rpx;
+  border-radius: 22rpx;
+  padding: 24rpx;
+  margin-bottom: 14rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
 }
 .tip-header {
   display: flex;
   align-items: center;
   margin-bottom: 8rpx;
 }
-.tip-icon { font-size: 28rpx; margin-right: 10rpx; }
+.tip-icon {
+  min-width: 72rpx;
+  height: 36rpx;
+  border-radius: 999rpx;
+  background: #f2f5f8;
+  color: #475467;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18rpx;
+  font-weight: 900;
+  margin-right: 12rpx;
+}
 .tip-title {
   font-size: 28rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 800;
+  color: #101828;
 }
 .tip-content {
   font-size: 26rpx;
@@ -604,24 +736,39 @@ export default defineComponent({
 .loading-mask {
   text-align: center;
   padding: 60rpx;
-  color: #999;
+  color: #7b8794;
   font-size: 28rpx;
 }
 .empty-state {
   text-align: center;
   padding: 100rpx 40rpx;
+  background: #fff;
+  border-radius: 26rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
 }
-.empty-icon { font-size: 80rpx; display: block; margin-bottom: 20rpx; }
+.empty-icon {
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 28rpx;
+  background: #101828;
+  color: #31d4a0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 22rpx;
+  font-size: 22rpx;
+  font-weight: 900;
+}
 .empty-title {
   font-size: 32rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
   display: block;
   margin-bottom: 12rpx;
 }
 .empty-desc {
   font-size: 26rpx;
-  color: #999;
+  color: #7b8794;
   line-height: 1.5;
   display: block;
   margin-bottom: 28rpx;
@@ -645,7 +792,7 @@ export default defineComponent({
   font-weight: 600;
 }
 .empty-action.primary {
-  background: #4A90E2;
+  background: #101828;
   color: #fff;
 }
 </style>

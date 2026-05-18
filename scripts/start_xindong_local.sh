@@ -9,7 +9,7 @@ BACKEND_LOG="$LOG_DIR/local-backend.log"
 ADMIN_LOG="$LOG_DIR/local-admin.log"
 
 JAVA_BIN="${JAVA_BIN:-/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java}"
-BACKEND_PORT="${BACKEND_PORT:-8080}"
+BACKEND_PORT="${BACKEND_PORT:-18080}"
 API_DOMAIN="${API_DOMAIN:-https://api.black-mjt.cn}"
 
 DB_HOST="${DB_HOST:-127.0.0.1}"
@@ -130,6 +130,7 @@ cd "$BACKEND_DIR"
     DB_PASSWORD="$DB_PASSWORD" \
     REDIS_HOST="$REDIS_HOST" \
     REDIS_PORT="$REDIS_PORT" \
+    SERVER_PORT="$BACKEND_PORT" \
     WECHAT_APPID="$WECHAT_APPID" \
     WECHAT_SECRET="$WECHAT_SECRET" \
     "$JAVA_BIN" -jar ruoyi-admin/target/ruoyi-admin.jar \
@@ -170,7 +171,7 @@ if curl -fsS "$PUBLIC_CHECK"; then
 EOF
 else
   printf "\n"
-  warn "本地接口正常，但公网接口不可用。请检查 cloudflared 是否运行，以及 Cloudflare Tunnel 是否转发到 http://localhost:8080。"
+  warn "本地接口正常，但公网接口不可用。请检查 cloudflared 是否运行，以及 Cloudflare Tunnel 是否转发到 http://localhost:$BACKEND_PORT。"
 fi
 
 if [ "$WITH_ADMIN" = "1" ]; then

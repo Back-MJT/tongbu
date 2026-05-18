@@ -4,35 +4,42 @@
 -->
 <template>
   <view class="training-plan-page">
-    <!-- 页面头部 -->
-    <view class="page-header">
-      <text class="page-title">AI训练方案</text>
-      <text class="algo-badge">AE v{{ prescription?.algorithmVersion?.replace('XIN-AE-', '') || '0.1' }}</text>
-    </view>
-
     <!-- 加载状态 -->
     <view v-if="loading" class="loading-state">
+      <view class="loading-mark">AI</view>
       <text class="loading-text">AI教练正在分析数据...</text>
     </view>
 
     <!-- 训练目标卡片 -->
-    <view v-if="!loading && prescription" class="goal-card">
+    <view v-if="!loading && prescription" class="plan-hero">
+      <view class="hero-topline">
+        <text class="hero-eyebrow">TRAINING RX</text>
+        <text class="algo-badge">AE v{{ prescription?.algorithmVersion?.replace('XIN-AE-', '') || '0.1' }}</text>
+      </view>
       <view class="goal-header">
-        <text class="goal-icon">🎯</text>
         <view class="goal-info">
           <text class="goal-title">{{ prescription.exerciseGoal }}</text>
-          <text class="goal-subtitle">{{ prescription.exerciseGoalEn }}</text>
+          <text class="goal-subtitle">{{ prescription.exerciseGoalEn || 'Personalized training prescription' }}</text>
+        </view>
+        <view class="stage-tag" :style="{ backgroundColor: stageColor }">
+          <text class="stage-text">{{ stageLabel }}</text>
         </view>
       </view>
-      <view class="stage-tag" :style="{ backgroundColor: stageColor }">
-        <text class="stage-text">{{ stageLabel }}</text>
+      <view class="hero-progress">
+        <view class="progress-copy">
+          <text class="progress-label">今日完成度</text>
+          <text class="progress-value">{{ completedCount }}/{{ prescription.tasks.length }}</text>
+        </view>
+        <view class="progress-track">
+          <view class="progress-fill" :style="{ width: progressPercent + '%' }"></view>
+        </view>
       </view>
     </view>
 
     <!-- AI教练建议 -->
     <view v-if="!loading && prescription" class="coach-card">
       <view class="coach-header">
-        <text class="coach-icon">🤖</text>
+        <text class="coach-icon">AI</text>
         <text class="coach-title">AI教练建议</text>
       </view>
       <text class="coach-content">{{ prescription.aiSuggestion }}</text>
@@ -86,7 +93,7 @@
 
     <!-- AI教练提示 (展开式) -->
     <view v-if="!loading && prescription" class="tips-section">
-      <text class="section-title">💡 训练提示</text>
+      <text class="section-title">训练提示</text>
       <view class="tip-list">
         <view
           v-for="(tip, idx) in prescription.healthTips"
@@ -95,7 +102,7 @@
           @tap="toggleTip(idx)"
         >
           <view class="tip-header">
-            <text class="tip-category" :class="tip.category">{{ tip.category === 'nutrition' ? '🍎' : '💪' }}</text>
+            <text class="tip-category" :class="tip.category">{{ tip.category === 'nutrition' ? 'NUTR' : 'MOVE' }}</text>
             <text class="tip-title">{{ tip.title }}</text>
             <text class="tip-expand">{{ expandedTips[idx] ? '▾' : '▸' }}</text>
           </view>
@@ -109,7 +116,10 @@
 
     <!-- 心率区间 -->
     <view v-if="!loading && prescription?.targetHrZone" class="hr-zone-card">
-      <text class="section-title">❤️ 目标心率区间</text>
+      <view class="section-header compact">
+        <text class="section-title">目标心率区间</text>
+        <text class="section-tag">HR</text>
+      </view>
       <view class="hr-display">
         <text class="hr-range">{{ prescription.targetHrZone.low }} - {{ prescription.targetHrZone.high }} bpm</text>
         <text class="hr-label">{{ prescription.targetHrZone.label }}</text>
@@ -118,7 +128,10 @@
 
     <!-- 循证参考 -->
     <view v-if="!loading && prescription?.evidenceRefs?.length" class="evidence-section">
-      <text class="section-title">📚 循证参考</text>
+      <view class="section-header compact">
+        <text class="section-title">循证参考</text>
+        <text class="section-tag">REF</text>
+      </view>
       <view class="evidence-list">
         <text
           v-for="(ref, idx) in prescription.evidenceRefs"
@@ -132,7 +145,7 @@
 
     <!-- 空状态 -->
     <view v-if="!loading && !prescription" class="empty-state">
-      <text class="empty-icon">🏋️</text>
+      <text class="empty-icon">PLAN</text>
       <text class="empty-title">暂无训练方案</text>
       <text class="empty-desc">请先绑定设备并完善个人资料</text>
       <view class="empty-action" @tap="goDeviceBinding">
@@ -142,7 +155,7 @@
 
     <!-- 错误状态 -->
     <view v-if="error" class="error-state">
-      <text class="error-icon">⚠️</text>
+      <text class="error-icon">!</text>
       <text class="error-text">{{ error }}</text>
       <view class="retry-btn" @tap="loadPrescription">
         <text>重新加载</text>
@@ -185,6 +198,12 @@ export default defineComponent({
     const completedCount = computed(() => {
       if (!prescription.value?.tasks) return 0;
       return prescription.value.tasks.filter(t => t.status === 'completed').length;
+    });
+
+    const progressPercent = computed(() => {
+      const tasks = prescription.value?.tasks || [];
+      if (!tasks.length) return 0;
+      return Math.round((completedCount.value / tasks.length) * 100);
     });
 
     onMounted(async () => {
@@ -230,6 +249,7 @@ export default defineComponent({
       if (task.status === 'completed') return;
       const params = [
         `taskId=${encodeURIComponent(task.taskId || '')}`,
+        `prescriptionId=${encodeURIComponent(task.prescriptionId || '')}`,
         `exerciseName=${encodeURIComponent(task.exerciseName || '')}`,
         `exerciseType=${encodeURIComponent(task.exerciseType || 'strength')}`,
         `targetSets=${encodeURIComponent(task.targetSets || '')}`,
@@ -261,6 +281,7 @@ export default defineComponent({
       stageLabel,
       stageColor,
       completedCount,
+      progressPercent,
       toggleTip,
       onTaskClick,
       getIntensityClass,
@@ -641,5 +662,309 @@ export default defineComponent({
   padding: 12rpx 36rpx;
   border-radius: 24rpx;
   display: inline-block;
+}
+
+.training-plan-page {
+  padding: 28rpx;
+  background: #f3f6f8;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.plan-hero {
+  background: linear-gradient(145deg, #101827 0%, #1d2b3f 52%, #244d4a 100%);
+  border-radius: 28rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  color: #fff;
+  box-shadow: 0 18rpx 42rpx rgba(17, 24, 39, 0.16);
+}
+
+.hero-topline,
+.goal-header,
+.progress-copy,
+.section-header.compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hero-eyebrow {
+  font-size: 22rpx;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-weight: 700;
+}
+
+.algo-badge {
+  font-size: 22rpx;
+  color: #b9f4df;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+}
+
+.goal-header {
+  margin: 36rpx 0 28rpx;
+}
+
+.goal-title {
+  font-size: 44rpx;
+  line-height: 1.16;
+  font-weight: 800;
+  color: #fff;
+  display: block;
+  margin-bottom: 10rpx;
+}
+
+.goal-subtitle {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.stage-tag {
+  min-width: 112rpx;
+  height: 52rpx;
+  padding: 0 18rpx;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 18rpx;
+}
+
+.stage-text {
+  font-size: 24rpx;
+  color: #fff;
+  font-weight: 700;
+}
+
+.hero-progress {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 18rpx;
+  padding: 18rpx;
+}
+
+.progress-label {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.progress-value {
+  font-size: 28rpx;
+  color: #fff;
+  font-weight: 800;
+}
+
+.progress-track {
+  height: 10rpx;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999rpx;
+  overflow: hidden;
+  margin-top: 14rpx;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4ee0a6, #62b5ff);
+  border-radius: 999rpx;
+}
+
+.coach-card,
+.evidence-section,
+.hr-zone-card,
+.tip-item,
+.task-item {
+  border-radius: 22rpx;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.06);
+}
+
+.coach-card {
+  background: #fff;
+  padding: 28rpx;
+  margin-bottom: 26rpx;
+  border-left: 0;
+}
+
+.coach-icon {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 16rpx;
+  background: #111827;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  font-weight: 800;
+  margin-right: 14rpx;
+}
+
+.coach-title {
+  color: #111827;
+  font-size: 30rpx;
+}
+
+.coach-content,
+.tip-content {
+  color: #334155;
+}
+
+.coach-reasoning {
+  background: #f6f8fb;
+  border-radius: 18rpx;
+  padding: 18rpx;
+}
+
+.reasoning-label,
+.task-count {
+  color: #0f766e;
+}
+
+.section-title {
+  color: #111827;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.task-item {
+  background: #fff;
+  padding: 26rpx;
+  margin-bottom: 14rpx;
+}
+
+.task-item.in_progress {
+  border-left: 0;
+  box-shadow: 0 12rpx 30rpx rgba(31, 111, 235, 0.12);
+}
+
+.task-status-dot {
+  width: 54rpx;
+  height: 54rpx;
+  background: #eef2f7;
+  color: #64748b;
+  font-weight: 800;
+  margin-right: 18rpx;
+}
+
+.task-name {
+  color: #101827;
+  font-size: 30rpx;
+}
+
+.task-detail {
+  color: #64748b;
+}
+
+.task-intensity {
+  font-weight: 700;
+  padding: 5rpx 12rpx;
+  border-radius: 999rpx;
+}
+
+.task-rest {
+  color: #94a3b8;
+}
+
+.action-start {
+  background: #101827;
+  border-radius: 999rpx;
+}
+
+.tips-section {
+  margin-bottom: 26rpx;
+}
+
+.tip-item {
+  background: #fff;
+  padding: 24rpx;
+  margin-bottom: 14rpx;
+}
+
+.tip-category {
+  width: 76rpx;
+  height: 42rpx;
+  border-radius: 999rpx;
+  background: #eef8f3;
+  color: #0f766e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20rpx;
+  font-weight: 800;
+  margin-right: 14rpx;
+}
+
+.tip-category.nutrition {
+  background: #fff4e6;
+  color: #b45309;
+}
+
+.tip-title {
+  color: #111827;
+}
+
+.section-tag {
+  font-size: 20rpx;
+  font-weight: 800;
+  color: #64748b;
+  background: #eef2f7;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+}
+
+.hr-zone-card {
+  background: #fff;
+  padding: 28rpx;
+}
+
+.hr-range {
+  color: #be123c;
+}
+
+.hr-label {
+  color: #64748b;
+}
+
+.evidence-section {
+  background: #fff;
+  padding: 28rpx;
+}
+
+.loading-state,
+.empty-state,
+.error-state {
+  background: #fff;
+  border-radius: 28rpx;
+  margin-top: 48rpx;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.06);
+}
+
+.loading-mark,
+.empty-icon,
+.error-icon {
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 28rpx;
+  background: #101827;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 900;
+  margin: 0 auto 22rpx;
+}
+
+.empty-action {
+  background: #101827;
+  border-radius: 999rpx;
+}
+
+.retry-btn {
+  border-color: #101827;
+  color: #101827;
+  border-radius: 999rpx;
 }
 </style>

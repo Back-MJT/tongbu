@@ -6,24 +6,44 @@
   <view class="profile-page">
     <!-- 用户信息卡片 -->
     <view class="profile-card">
-      <view class="avatar-wrap" @tap="onAvatarClick">
-        <image
-          class="avatar-img"
-          :src="userInfo?.avatar || '/assets/default-avatar.png'"
-          mode="aspectFill"
-        />
-        <view class="avatar-edit-icon">✎</view>
+      <view class="profile-top">
+        <view class="avatar-wrap" @tap="onAvatarClick">
+          <image
+            v-if="userInfo?.avatar"
+            class="avatar-img"
+            :src="userInfo.avatar"
+            mode="aspectFill"
+          />
+          <open-data v-else class="avatar-img avatar-open-data" type="userAvatarUrl"></open-data>
+          <view class="avatar-edit-icon">EDIT</view>
+        </view>
+        <view class="user-info">
+          <text class="eyebrow">MEMBER PROFILE</text>
+          <text v-if="displayNickname" class="nickname">{{ displayNickname }}</text>
+          <open-data v-else class="nickname" type="userNickName"></open-data>
+          <text class="user-stage">{{ stageLabel }} · {{ userInfo?.level || 1 }}级</text>
+        </view>
       </view>
-      <view class="user-info">
-        <text class="nickname">{{ userInfo?.nickname || '加载中...' }}</text>
-        <text class="user-stage">
-          {{ stageLabel }}
-        </text>
-        <view class="stage-progress-wrap">
-          <view class="stage-progress-bar">
-            <view class="stage-progress-fill" :style="{ width: stageProgress + '%' }"></view>
-          </view>
-          <text class="stage-progress-text">{{ userInfo?.level || 1 }}级</text>
+
+      <view class="stage-progress-wrap">
+        <view class="stage-progress-bar">
+          <view class="stage-progress-fill" :style="{ width: stageProgress + '%' }"></view>
+        </view>
+        <text class="stage-progress-text">{{ stageProgress }}%</text>
+      </view>
+
+      <view class="profile-metrics">
+        <view class="profile-metric">
+          <text>{{ stats.totalSessions }}</text>
+          <text>训练</text>
+        </view>
+        <view class="profile-metric">
+          <text>{{ stats.totalSets }}</text>
+          <text>总组数</text>
+        </view>
+        <view class="profile-metric">
+          <text>{{ stats.peakVolumeKg }}</text>
+          <text>峰值kg</text>
         </view>
       </view>
     </view>
@@ -49,7 +69,7 @@
           :key="idx"
           class="device-item"
         >
-          <view class="device-icon">🏋️</view>
+          <view class="device-icon">IMU</view>
           <view class="device-info">
             <text class="device-name">{{ device.deviceName || '未知设备' }}</text>
             <text class="device-code">{{ device.deviceCode }}</text>
@@ -67,7 +87,7 @@
 
       <!-- 无设备空状态 -->
       <view v-else class="no-device" @tap="goDeviceBinding">
-        <text class="no-device-icon">📱</text>
+        <text class="no-device-icon">PAIR</text>
         <text class="no-device-text">暂未绑定设备</text>
         <text class="no-device-hint">{{ loadError ? '设备暂未同步，可重试或直接添加' : '点击添加设备开始训练' }}</text>
       </view>
@@ -116,17 +136,17 @@
     <!-- 菜单列表 -->
     <view class="menu-card">
       <view class="menu-item" @tap="onMenuItem('settings')">
-        <text class="menu-icon">⚙️</text>
+        <text class="menu-icon">SET</text>
         <text class="menu-label">设置</text>
         <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" @tap="onMenuItem('privacy')">
-        <text class="menu-icon">🔒</text>
+        <text class="menu-icon">SEC</text>
         <text class="menu-label">隐私政策</text>
         <text class="menu-arrow">›</text>
       </view>
       <view class="menu-item" @tap="onMenuItem('about')">
-        <text class="menu-icon">ℹ️</text>
+        <text class="menu-icon">INFO</text>
         <text class="menu-label">关于我们</text>
         <text class="menu-arrow">›</text>
       </view>
@@ -193,6 +213,10 @@ export default defineComponent({
         if (localAvatar) {
           userInfo.value.avatar = localAvatar;
         }
+        const localNickname = wx.getStorageSync('nickname');
+        if (localNickname && localNickname !== '微信用户' && localNickname !== '用户') {
+          userInfo.value.nickname = localNickname;
+        }
         // 确保 devices 是数组
         if (Array.isArray(devRes.data)) {
           devices.value = devRes.data;
@@ -221,7 +245,7 @@ export default defineComponent({
     function getEmptyUser() {
       return {
         userId: 0,
-        nickname: '微信用户',
+        nickname: '',
         avatar: '',
         level: 1,
         stage: 'beginner',
@@ -254,6 +278,14 @@ export default defineComponent({
     const stageProgress = computed(() => {
       const level = userInfo.value?.level || 1;
       return Math.min(100, level * 20);
+    });
+
+    const displayNickname = computed(() => {
+      const name = String(userInfo.value?.nickname || '').trim();
+      if (!name || name === '微信用户' || name === '用户') {
+        return '';
+      }
+      return name;
     });
 
     const stageTimeline = computed(() => {
@@ -414,6 +446,7 @@ export default defineComponent({
       stats,
       stageLabel,
       stageProgress,
+      displayNickname,
       stageTimeline,
       goDeviceBinding,
       loadProfileData,
@@ -428,77 +461,124 @@ export default defineComponent({
 
 <style>
 .profile-page {
-  padding: 24rpx;
-  background: #f5f5f5;
+  padding: 28rpx 24rpx 56rpx;
+  background: #edf2f7;
   min-height: 100vh;
+  box-sizing: border-box;
 }
 .profile-card {
-  background: linear-gradient(135deg, #4A90E2, #6BB5FF);
-  border-radius: 16rpx;
-  padding: 36rpx;
+  background: linear-gradient(145deg, #101828 0%, #1f2a44 58%, #123f3a 100%);
+  border-radius: 28rpx;
+  padding: 32rpx 30rpx 30rpx;
+  margin-bottom: 24rpx;
+  color: #fff;
+  box-shadow: 0 24rpx 48rpx rgba(16, 24, 40, 0.2);
+}
+.profile-top {
   display: flex;
   align-items: center;
-  margin-bottom: 24rpx;
+  margin-bottom: 28rpx;
 }
 .avatar-wrap {
   position: relative;
   margin-right: 28rpx;
 }
 .avatar-img {
-  width: 100rpx;
-  height: 100rpx;
+  width: 112rpx;
+  height: 112rpx;
   border-radius: 50%;
   background: rgba(255,255,255,0.3);
-  border: 3rpx solid rgba(255,255,255,0.5);
+  border: 4rpx solid rgba(255,255,255,0.36);
+  overflow: hidden;
+}
+.avatar-open-data {
+  display: block;
 }
 .avatar-edit-icon {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 36rpx;
-  height: 36rpx;
+  bottom: -4rpx;
+  right: -8rpx;
+  min-width: 60rpx;
+  height: 34rpx;
+  padding: 0 10rpx;
   background: #fff;
-  border-radius: 50%;
-  font-size: 20rpx;
+  border-radius: 999rpx;
+  font-size: 16rpx;
+  font-weight: 900;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #4A90E2;
+  color: #101828;
 }
 .user-info { flex: 1; }
+.eyebrow {
+  display: block;
+  color: rgba(255,255,255,0.58);
+  font-size: 20rpx;
+  font-weight: 900;
+  margin-bottom: 8rpx;
+}
 .nickname {
-  font-size: 36rpx;
-  font-weight: bold;
+  font-size: 40rpx;
+  font-weight: 900;
   color: #fff;
   display: block;
-  margin-bottom: 6rpx;
+  margin-bottom: 8rpx;
 }
 .user-stage {
   font-size: 26rpx;
-  color: rgba(255,255,255,0.8);
+  color: rgba(255,255,255,0.72);
   display: block;
-  margin-bottom: 12rpx;
 }
 .stage-progress-wrap {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
 }
 .stage-progress-bar {
   flex: 1;
-  height: 8rpx;
-  background: rgba(255,255,255,0.3);
-  border-radius: 4rpx;
+  height: 14rpx;
+  background: rgba(255,255,255,0.14);
+  border-radius: 999rpx;
+  overflow: hidden;
 }
 .stage-progress-fill {
   height: 100%;
-  background: #fff;
-  border-radius: 4rpx;
+  background: linear-gradient(90deg, #31d4a0, #63e6be);
+  border-radius: 999rpx;
   transition: width 0.3s;
 }
 .stage-progress-text {
   font-size: 22rpx;
-  color: rgba(255,255,255,0.8);
+  color: rgba(255,255,255,0.72);
+  font-weight: 800;
+}
+.profile-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14rpx;
+}
+.profile-metric {
+  min-height: 112rpx;
+  border-radius: 20rpx;
+  padding: 18rpx 10rpx;
+  background: rgba(255,255,255,0.1);
+  border: 1rpx solid rgba(255,255,255,0.12);
+  text-align: center;
+}
+.profile-metric text:first-child {
+  display: block;
+  color: #fff;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.15;
+}
+.profile-metric text:last-child {
+  display: block;
+  margin-top: 8rpx;
+  color: rgba(255,255,255,0.58);
+  font-size: 22rpx;
 }
 .error-banner {
   background: #fff7e6;
@@ -526,9 +606,11 @@ export default defineComponent({
 .stage-card,
 .menu-card {
   background: #fff;
-  border-radius: 16rpx;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 14rpx 34rpx rgba(20, 38, 70, 0.06);
 }
 .section-header {
   display: flex;
@@ -538,30 +620,43 @@ export default defineComponent({
 }
 .section-title {
   font-size: 30rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
 }
 .add-device-btn {
-  background: #4A90E2;
+  background: #101828;
   color: #fff;
   font-size: 24rpx;
-  padding: 8rpx 20rpx;
-  border-radius: 20rpx;
+  font-weight: 800;
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
 }
-.device-list {}
 .device-item {
   display: flex;
   align-items: center;
-  padding: 20rpx 0;
+  padding: 22rpx 0;
   border-bottom: 1rpx solid #f0f0f0;
 }
 .device-item:last-child { border-bottom: none; }
-.device-icon { font-size: 40rpx; margin-right: 16rpx; }
+.device-icon {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 20rpx;
+  background: #101828;
+  color: #31d4a0;
+  font-size: 20rpx;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 18rpx;
+  flex-shrink: 0;
+}
 .device-info { flex: 1; }
 .device-name {
   font-size: 30rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
   display: block;
 }
 .device-code {
@@ -570,21 +665,34 @@ export default defineComponent({
   display: block;
 }
 .device-status { font-size: 24rpx; }
-.device-status.online { color: #52c41a; }
+.device-status.online { color: #0f9f7a; }
 .device-status.offline { color: #999; }
 .unbind-btn {
-  border: 1rpx solid #ff4d4f;
-  color: #ff4d4f;
+  border: 1rpx solid #fecdca;
+  color: #b42318;
   font-size: 24rpx;
-  padding: 6rpx 16rpx;
-  border-radius: 20rpx;
+  font-weight: 800;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
 }
 .no-device {
   text-align: center;
   padding: 40rpx 20rpx;
 }
-.no-device-icon { font-size: 60rpx; display: block; margin-bottom: 12rpx; }
-.no-device-text { font-size: 30rpx; color: #1a1a2e; display: block; margin-bottom: 8rpx; }
+.no-device-icon {
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 28rpx;
+  background: #101828;
+  color: #31d4a0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 18rpx;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+.no-device-text { font-size: 30rpx; color: #101828; font-weight: 900; display: block; margin-bottom: 8rpx; }
 .no-device-hint { font-size: 24rpx; color: #999; }
 .stats-grid {
   display: grid;
@@ -593,15 +701,15 @@ export default defineComponent({
   margin-top: 8rpx;
 }
 .stat-box {
-  background: #f8f9fa;
-  border-radius: 12rpx;
+  background: #f5f8fb;
+  border-radius: 20rpx;
   padding: 20rpx;
   text-align: center;
 }
 .stat-val {
   font-size: 40rpx;
-  font-weight: bold;
-  color: #4A90E2;
+  font-weight: 900;
+  color: #101828;
   display: block;
   margin-bottom: 6rpx;
 }
@@ -644,8 +752,8 @@ export default defineComponent({
   color: #999;
   display: block;
 }
-.stage-node.active .stage-name { color: #4A90E2; }
-.stage-node.done .stage-name { color: #52c41a; }
+.stage-node.active .stage-name { color: #101828; }
+.stage-node.done .stage-name { color: #0f9f7a; }
 .stage-desc {
   font-size: 20rpx;
   color: #999;
@@ -659,16 +767,30 @@ export default defineComponent({
   border-bottom: 1rpx solid #f5f5f5;
 }
 .menu-item:last-child { border-bottom: none; }
-.menu-icon { font-size: 32rpx; margin-right: 16rpx; }
-.menu-label { flex: 1; font-size: 30rpx; color: #1a1a2e; }
+.menu-icon {
+  min-width: 70rpx;
+  height: 38rpx;
+  border-radius: 999rpx;
+  background: #f2f5f8;
+  color: #475467;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18rpx;
+  font-weight: 900;
+  margin-right: 16rpx;
+}
+.menu-label { flex: 1; font-size: 30rpx; color: #101828; font-weight: 800; }
 .menu-arrow { font-size: 36rpx; color: #ccc; }
 .logout-btn {
   background: #fff;
-  border-radius: 16rpx;
+  border-radius: 24rpx;
   padding: 32rpx;
   text-align: center;
-  color: #ff4d4f;
+  color: #b42318;
   font-size: 30rpx;
+  font-weight: 800;
   margin-bottom: 40rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
 }
 </style>

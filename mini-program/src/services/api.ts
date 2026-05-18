@@ -6,7 +6,6 @@
 import { config } from '../config/env';
 
 const API_BASE = config.apiBase;
-const IE_BASE = config.ieBase || config.apiBase;
 
 /**
  * 检查是否为演示模式
@@ -92,13 +91,28 @@ async function request<T = any>(
 
 // ─── 认证 ────────────────────────────────────────────────────────────────────
 
-export async function wxLogin(code: string) {
-  return request<{ token: string; userId: number; tenantId?: number; isDemo?: boolean }>(
+export async function wxLogin(code: string, profile: { nickname?: string; avatar?: string } = {}) {
+  return request<{
+    token: string;
+    userId: number;
+    tenantId?: number;
+    isDemo?: boolean;
+    nickname?: string;
+    avatar?: string;
+    needsProfileSetup?: boolean;
+    openId?: string;
+    wechatOpenId?: string;
+    wechatOpenIdMasked?: string;
+    openid?: string;
+    unionId?: string;
+    wechatUnionId?: string;
+    wechatSessionSource?: 'dev' | 'wechat';
+  }>(
     API_BASE,
     '/api/mini/auth/wechat-login',
     {
     method: 'POST',
-    data: { code },
+    data: { code, ...profile },
     }
   );
 }
@@ -371,6 +385,7 @@ export async function submitTrainingSession(payload: {
   usageSessionId?: string;
   exerciseType?: string;
   taskId?: string | number;
+  prescriptionId?: string | number;
   exerciseName?: string;
   completedSets: number;
   totalReps: number;
@@ -384,7 +399,15 @@ export async function submitTrainingSession(payload: {
     startedAt?: string;
     endedAt?: string;
   }>;
-}) {
+}): Promise<{ code: number; data: {
+  sessionId: number;
+  status: string;
+  analysisTaskId?: string;
+  analysisStatus?: string;
+  analysisMessage?: string;
+  aiFeedback?: AiFeedback;
+  alineProvider?: string;
+} }> {
   if (isDemoMode()) {
     const sessionId = Date.now();
     const now = new Date();
@@ -402,7 +425,28 @@ export async function submitTrainingSession(payload: {
       sessionTime: now.toISOString(),
     };
     saveDemoTrainingSession(record);
-    return { code: 200, data: { sessionId, status: 'recorded' } };
+    return {
+      code: 200,
+      data: {
+        sessionId,
+        status: 'recorded',
+        analysisTaskId: `demo-analysis-${sessionId}`,
+        analysisStatus: 'unavailable',
+        analysisMessage: 'A Line API 尚未接入，当前展示 B Line 演示反馈。',
+        aiFeedback: {
+          overallScore: 0,
+          strengthLevel: '待接入',
+          summary: '本次训练记录已保存。A Line 身体引擎 API 给到后，这里会展示正式分析。',
+          suggestions: [
+            '保持动作节奏稳定，优先完成计划组数。',
+            '训练后记录主观疲劳和疼痛情况，后续可作为身体引擎输入。',
+          ],
+          nextRecommendation: '下次训练先维持当前强度，等待身体引擎正式评估。',
+          isPlaceholder: true,
+        },
+        alineProvider: 'b_line_demo',
+      },
+    };
   }
   return request<{ sessionId: number; status: string }>(API_BASE, '/api/training/session', {
     method: 'POST',
@@ -411,12 +455,17 @@ export async function submitTrainingSession(payload: {
 }
 
 export async function submitForAnalysis(payload: {
-  userId: string;
+  userId?: string;
   sessionId: string;
-  completedSets: number;
-  totalReps: number;
-  durationMin: number;
-}): Promise<{ code: number; data?: { aiFeedback?: AiFeedback } }> {
+  completedSets?: number;
+  totalReps?: number;
+  durationMin?: number;
+  taskId?: string | number;
+  prescriptionId?: string | number;
+  equipmentCode?: string;
+  deviceCode?: string;
+  exerciseType?: string;
+}): Promise<{ code: number; data?: AnalysisResult }> {
   if (isDemoMode()) {
     return {
       code: 200,
@@ -438,7 +487,7 @@ export async function submitForAnalysis(payload: {
   });
 }
 
-export async function getAnalysisResult(sessionId: string): Promise<{ code: number; data?: { aiFeedback?: AiFeedback; status?: string } }> {
+export async function getAnalysisResult(sessionId: string): Promise<{ code: number; data?: AnalysisResult }> {
   if (isDemoMode()) {
     return { code: 200, data: { status: 'completed' } };
   }
@@ -448,7 +497,25 @@ export async function getAnalysisResult(sessionId: string): Promise<{ code: numb
 export interface AiFeedback {
   overallScore: number;
   strengthLevel: string;
+  summary?: string;
   suggestions?: string[];
+  warnings?: string[];
+  nextRecommendation?: string;
+  isPlaceholder?: boolean;
+  provider?: string;
+}
+
+export interface AnalysisResult {
+  taskId?: string;
+  analysisTaskId?: string;
+  sessionId?: string;
+  status?: 'queued' | 'processing' | 'completed' | 'failed' | 'unavailable' | string;
+  analysisStatus?: string;
+  progress?: number;
+  message?: string;
+  analysisMessage?: string;
+  aiFeedback?: AiFeedback;
+  provider?: string;
 }
 
 export async function getTrainingPlan(params: {
@@ -480,11 +547,11 @@ export async function getTrainingPlan(params: {
 // ─── 干预引擎 (Intervention Engine) ──────────────────────────────────────────
 
 export async function getHealthProfile(userId: string) {
-  return request<HealthProfile>(IE_BASE, `/api/profiles/${userId}`);
+  return request<HealthProfile>(API_BASE, `/api/intervention/health-profile/${userId}`);
 }
 
 export async function createHealthProfile(profile: Partial<HealthProfile>) {
-  return request<HealthProfile>(IE_BASE, '/api/profiles', {
+  return request<HealthProfile>(API_BASE, '/api/profiles', {
     method: 'POST',
     data: profile,
   });
@@ -495,7 +562,7 @@ export async function getExercisePrescription(params: {
   goal?: string;
   exerciseType?: string;
 }) {
-  return request<ExercisePrescription>(IE_BASE, '/api/prescriptions/exercise', {
+  return request<ExercisePrescription>(API_BASE, '/api/prescriptions/exercise', {
     method: 'POST',
     data: params,
   });
@@ -505,7 +572,7 @@ export async function getSleepPrescription(params: {
   userId: string;
   sleepIssue?: string;
 }) {
-  return request<any>(IE_BASE, '/api/prescriptions/sleep', {
+  return request<any>(API_BASE, '/api/prescriptions/sleep', {
     method: 'POST',
     data: params,
   });
@@ -516,7 +583,7 @@ export async function submitDeviceData(data: {
   userId: string;
   metrics: Record<string, number>;
 }) {
-  return request(IE_BASE, '/api/integration/data', {
+  return request(API_BASE, '/api/integration/data', {
     method: 'POST',
     data,
   });
@@ -539,8 +606,7 @@ export async function getRenderedTrainingPlan(profile: {
   if (isDemoMode()) {
     return { code: 200, data: getDemoRenderedPlan() };
   }
-  // 使用干预引擎的处方API
-  return request<RenderedPlan>(IE_BASE, '/api/prescriptions/exercise', {
+  return request<RenderedPlan>(API_BASE, '/api/prescriptions/exercise', {
     method: 'POST',
     data: {
       userId: profile.userId,
@@ -556,7 +622,8 @@ export async function getUserStage(userId: string) {
   }
   try {
     const profile = await getHealthProfile(userId);
-    return { code: 200, data: profile.data?.stage || { stage: 'beginner', label: '初学期', color: '#4CAF50' } };
+    const profileData = profile.data as any;
+    return { code: 200, data: profileData?.stage || { stage: 'beginner', label: '初学期', color: '#4CAF50' } };
   } catch (e) {
     return { code: 200, data: { stage: 'beginner', label: '初学期', color: '#4CAF50' } };
   }
@@ -733,14 +800,14 @@ export async function getMiniprogramDeviceTasks(params: {
   if (isDemoMode()) {
     return { code: 200, data: getDemoDeviceTasks() };
   }
-  // Route through RuoYi backend for auth + tenant + proxy to :4001
-  const res = await request<{ success: boolean; data: DeviceTasksResponse }>(
+  const res = await request<DeviceTasksResponse | { success: boolean; data: DeviceTasksResponse }>(
     API_BASE, '/api/mini/device-tasks', {
     method: 'POST',
     data: params,
   });
-  if (res.code === 200 && res.data?.data) {
-    return { code: 200, data: res.data.data as DeviceTasksResponse };
+  const data = (res.data as any)?.data || res.data;
+  if (res.code === 200 && data?.tasks) {
+    return { code: 200, data: data as DeviceTasksResponse };
   }
   throw new Error('Device tasks unavailable');
 }
@@ -1046,6 +1113,7 @@ export interface UserInfo {
   userId: number;
   nickname: string;
   avatar?: string;
+  needsProfileSetup?: boolean;
   level?: number;
   streakDays: number;
   complianceRate?: number;

@@ -6,8 +6,8 @@ page {
     Segoe UI, Arial, Roboto, 'PingFang SC', 'miui', 'Hiragino Sans GB',
     'Microsoft Yahei', sans-serif;
   font-size: 28rpx;
-  color: #1a1a2e;
-  background: #f4f7fb;
+  color: #101828;
+  background: #edf2f7;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -22,7 +22,7 @@ textarea {
 /* 通用工具类 */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
-.font-bold { font-weight: bold; }
+.font-bold { font-weight: 800; }
 .font-light { font-weight: 300; }
 
 /* 通用间距 */
@@ -35,13 +35,44 @@ textarea {
 .p-24 { padding: 24rpx; }
 .p-32 { padding: 32rpx; }
 
-/* 颜色变量 (rpx不支持CSS变量，这里做备注) */
-/* primary: #4A90E2 */
-/* success: #52c41a */
-/* warning: #ff9800 */
-/* danger: #ff4d4f */
-/* text-primary: #1a1a2e */
-/* text-secondary: #666 */
-/* text-muted: #999 */
-/* bg-primary: #f5f5f5 */
-/* card-bg: #fff */
+/* 昕动 B Line 小程序视觉基线 */
+/* ink: #101828 */
+/* brand-green: #13b5a5 */
+/* success-green: #31d4a0 */
+/* text-secondary: #667085 */
+/* page-bg: #edf2f7 */
+/* card-bg: #ffffff */
+
+.xd-card {
+  background: #fff;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  border-radius: 24rpx;
+  box-shadow: 0 14rpx 34rpx rgba(20, 38, 70, 0.06);
+}
+
+.xd-primary-btn {
+  background: #101828;
+  color: #fff;
+  border-radius: 999rpx;
+  font-weight: 800;
+}
+
+.xd-secondary-btn {
+  background: #e9fbf6;
+  color: #0f9f7a;
+  border: 1rpx solid #c5f2e6;
+  border-radius: 999rpx;
+  font-weight: 800;
+}
+
+.xd-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  padding: 6rpx 14rpx;
+  background: #f2f5f8;
+  color: #667085;
+  font-size: 22rpx;
+  font-weight: 800;
+}

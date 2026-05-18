@@ -73,15 +73,14 @@ public class DashboardController extends BaseController
         List<Object> dates = new ArrayList<>();
         List<Object> workouts = new ArrayList<>();
         List<Object> reps = new ArrayList<>();
+        java.time.LocalDate start = java.time.LocalDate.now().minusDays(points - 1L);
         for (int i = 0; i < points; i++)
         {
-            int day = 28 - points + i + 1;
-            if (day < 1) day = 1;
-            dates.add(java.time.LocalDate.now().withDayOfMonth(day).toString());
-            // Generate stable-looking demo data with a predictable base
-            int base = 8000 + (i * 200);
-            workouts.add(base + (int) (Math.random() * 500));
-            reps.add(base * 2 + (int) (Math.random() * 1000));
+            dates.add(start.plusDays(i).toString());
+            int base = 180 + (i * 12);
+            int wave = (i % 5) * 17;
+            workouts.add(base + wave);
+            reps.add((base + wave) * 42);
         }
 
         Map<String, Object> result = new LinkedHashMap<>();

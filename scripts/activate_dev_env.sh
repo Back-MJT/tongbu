@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-set -euo pipefail
+
+# Keep an interactive shell friendly when this file is sourced from Terminal.
+if [ -n "${ZSH_VERSION:-}" ] && [[ "$-" == *i* ]]; then
+  setopt interactivecomments 2>/dev/null || true
+fi
+
+if [[ "$-" != *i* ]]; then
+  set -euo pipefail
+fi
 
 if [ -n "${BASH_VERSION:-}" ]; then
   SCRIPT_PATH="${BASH_SOURCE[0]}"

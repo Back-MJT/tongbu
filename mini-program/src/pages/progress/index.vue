@@ -6,7 +6,10 @@
   <view class="progress-page">
     <!-- 页面头部 -->
     <view class="page-header">
-      <text class="page-title">训练进度</text>
+      <view>
+        <text class="eyebrow">PERFORMANCE</text>
+        <text class="page-title">训练进度</text>
+      </view>
       <text class="period-label" @tap="refreshProgress">{{ loading ? '同步中...' : '近30天 · 刷新' }}</text>
     </view>
 
@@ -17,6 +20,10 @@
 
     <!-- 概览统计卡片 -->
     <view class="overview-card">
+      <view class="overview-head">
+        <text class="overview-label">30天训练表现</text>
+        <text class="overview-score">{{ complianceRate }}%</text>
+      </view>
       <view class="stat-row">
         <view class="stat-item">
           <text class="stat-value">{{ streakDays }}</text>
@@ -238,9 +245,9 @@ export default defineComponent({
           doneTasks.value = 18;
           missedTasks.value = 7;
           badges.value = [
-            { icon: '🔥', name: '连续7天' },
-            { icon: '💪', name: '力量新手' },
-            { icon: '📅', name: '坚持30天' },
+            { icon: '7D', name: '连续7天' },
+            { icon: '1ST', name: '力量新手' },
+            { icon: '30D', name: '坚持30天' },
           ];
           return;
         }
@@ -336,8 +343,8 @@ export default defineComponent({
       doneTasks.value = 18;
       missedTasks.value = 7;
       badges.value = [
-        { icon: '🔥', name: '连续7天' },
-        { icon: '💪', name: '力量新手' },
+        { icon: '7D', name: '连续7天' },
+        { icon: '1ST', name: '完成首训' },
       ];
       computeWeekDays();
     }
@@ -380,7 +387,7 @@ export default defineComponent({
           totalSets: ex.sets,
           totalReps: ex.reps,
           peakLoadKg: ex.load,
-          durationMin: Math.floor(Math.random() * 30 + 30),
+          durationMin: 30 + ((i * 7) % 28),
         });
       }
       return records;
@@ -447,9 +454,9 @@ export default defineComponent({
 
     function buildBadges() {
       const result = [];
-      if (streakDays.value >= 3) result.push({ icon: '🔥', name: `连续${streakDays.value}天` });
-      if (totalSessions.value >= 1) result.push({ icon: '💪', name: '完成首训' });
-      if (totalSessions.value >= 10) result.push({ icon: '📅', name: '坚持训练' });
+      if (streakDays.value >= 3) result.push({ icon: `${streakDays.value}D`, name: `连续${streakDays.value}天` });
+      if (totalSessions.value >= 1) result.push({ icon: '1ST', name: '完成首训' });
+      if (totalSessions.value >= 10) result.push({ icon: '10X', name: '坚持训练' });
       return result;
     }
 
@@ -515,8 +522,8 @@ export default defineComponent({
 
 <style>
 .progress-page {
-  padding: 28rpx 24rpx 48rpx;
-  background: #f4f7fb;
+  padding: 28rpx 24rpx 56rpx;
+  background: #edf2f7;
   min-height: 100vh;
   box-sizing: border-box;
 }
@@ -526,17 +533,27 @@ export default defineComponent({
   align-items: center;
   margin-bottom: 24rpx;
 }
+.eyebrow {
+  display: block;
+  color: #7b8794;
+  font-size: 20rpx;
+  font-weight: 900;
+  margin-bottom: 6rpx;
+}
 .page-title {
-  font-size: 40rpx;
-  font-weight: 800;
-  color: #172033;
+  display: block;
+  font-size: 42rpx;
+  font-weight: 900;
+  color: #101828;
 }
 .period-label {
-  font-size: 26rpx;
-  color: #999;
-  background: #f0f0f0;
-  padding: 6rpx 16rpx;
-  border-radius: 20rpx;
+  font-size: 24rpx;
+  color: #101828;
+  background: #fff;
+  padding: 12rpx 20rpx;
+  border-radius: 999rpx;
+  font-weight: 800;
+  box-shadow: 0 8rpx 22rpx rgba(20, 38, 70, 0.05);
 }
 .error-banner {
   background: #fff7e6;
@@ -560,11 +577,28 @@ export default defineComponent({
   font-weight: 700;
 }
 .overview-card {
-  background: linear-gradient(135deg, #2563eb, #13b5a5);
-  border-radius: 16rpx;
-  padding: 36rpx 24rpx;
+  background: linear-gradient(145deg, #101828, #1f2a44 58%, #123f3a);
+  border-radius: 28rpx;
+  padding: 32rpx 28rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 18rpx 40rpx rgba(37, 99, 235, 0.18);
+  box-shadow: 0 24rpx 48rpx rgba(16, 24, 40, 0.2);
+}
+.overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+.overview-label {
+  color: rgba(255,255,255,0.68);
+  font-size: 24rpx;
+  font-weight: 800;
+}
+.overview-score {
+  color: #31d4a0;
+  font-size: 56rpx;
+  font-weight: 900;
+  line-height: 1;
 }
 .stat-row {
   display: flex;
@@ -574,6 +608,7 @@ export default defineComponent({
 .stat-item {
   text-align: center;
   flex: 1;
+  min-width: 0;
 }
 .stat-value {
   font-size: 52rpx;
@@ -600,16 +635,16 @@ export default defineComponent({
 .compliance-card,
 .badges-card {
   background: #fff;
-  border-radius: 16rpx;
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
-  border: 1rpx solid #edf1f6;
-  box-shadow: 0 10rpx 30rpx rgba(20, 38, 70, 0.04);
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 14rpx 34rpx rgba(20, 38, 70, 0.06);
 }
 .card-title {
   font-size: 30rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
   display: block;
   margin-bottom: 20rpx;
 }
@@ -634,22 +669,22 @@ export default defineComponent({
   justify-content: center;
 }
 .bar {
-  width: 32rpx;
+  width: 34rpx;
   min-height: 4rpx;
-  background: #e0e0e0;
-  border-radius: 4rpx 4rpx 0 0;
+  background: #e4e9f0;
+  border-radius: 999rpx 999rpx 4rpx 4rpx;
   transition: height 0.3s ease;
 }
 .bar-value {
   font-size: 22rpx;
-  color: #4A90E2;
-  font-weight: 600;
+  color: #101828;
+  font-weight: 800;
   text-align: center;
   margin-bottom: 6rpx;
   line-height: 1;
 }
-.bar.done { background: #b3d4fc; }
-.bar.active { background: #4A90E2; }
+.bar.done { background: #9fd8ca; }
+.bar.active { background: #13b5a5; }
 .day-label {
   font-size: 22rpx;
   color: #999;
@@ -672,20 +707,20 @@ export default defineComponent({
 }
 .compliance-rate-large {
   font-size: 36rpx;
-  font-weight: bold;
-  color: #4A90E2;
+  font-weight: 900;
+  color: #13b5a5;
 }
 .compliance-bar-wrap {
   height: 16rpx;
-  background: #ff4d4f;
-  border-radius: 8rpx;
+  background: #fee4e2;
+  border-radius: 999rpx;
   overflow: hidden;
   margin-bottom: 16rpx;
 }
 .compliance-bar {
   height: 100%;
-  background: #52c41a;
-  border-radius: 8rpx;
+  background: linear-gradient(90deg, #13b5a5, #31d4a0);
+  border-radius: 999rpx;
   transition: width 0.3s ease;
 }
 .compliance-legend {
@@ -710,32 +745,45 @@ export default defineComponent({
   gap: 16rpx;
 }
 .badge-item {
-  background: #f0f7ff;
-  border-radius: 12rpx;
+  background: #f5f8fb;
+  border-radius: 999rpx;
   padding: 16rpx 20rpx;
   display: flex;
   align-items: center;
   gap: 8rpx;
 }
-.badge-icon { font-size: 28rpx; }
-.badge-name { font-size: 24rpx; color: #4A90E2; }
+.badge-icon {
+  min-width: 54rpx;
+  height: 34rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: #101828;
+  color: #31d4a0;
+  font-size: 18rpx;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.badge-name { font-size: 24rpx; color: #344054; font-weight: 700; }
 .history-section { margin-top: 8rpx; }
 .section-title {
   font-size: 32rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
   display: block;
   margin-bottom: 16rpx;
 }
 .history-list {}
 .history-item {
   background: #fff;
-  border-radius: 12rpx;
+  border-radius: 24rpx;
   padding: 24rpx;
   margin-bottom: 16rpx;
   display: flex;
   align-items: center;
-  border: 1rpx solid #edf1f6;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 12rpx 28rpx rgba(20, 38, 70, 0.05);
 }
 .history-date-col {
   margin-right: 20rpx;
@@ -754,8 +802,8 @@ export default defineComponent({
 .history-content { flex: 1; }
 .history-exercise {
   font-size: 30rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #101828;
   display: block;
   margin-bottom: 6rpx;
 }
@@ -766,8 +814,8 @@ export default defineComponent({
 .history-meta { text-align: right; }
 .history-duration {
   font-size: 26rpx;
-  color: #4A90E2;
-  font-weight: 600;
+  color: #13b5a5;
+  font-weight: 800;
 }
 .history-item:active,
 .load-more:active,

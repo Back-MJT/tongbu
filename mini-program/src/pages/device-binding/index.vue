@@ -20,7 +20,7 @@
     </view>
 
     <view class="scan-card" @tap="onScanQrCode">
-      <view class="scan-icon">📷</view>
+      <view class="scan-icon">QR</view>
       <view class="scan-info">
         <text class="scan-title">扫码开始训练</text>
         <text class="scan-desc">扫描器械二维码后，自动匹配绑定传感器并开始记录</text>
@@ -29,8 +29,8 @@
     </view>
 
     <view class="demo-card" @tap="useCurrentEquipment">
-      <text class="demo-title">使用当前器械</text>
-      <text class="demo-desc">现场暂未扫码时，可先使用默认器械继续完成训练记录</text>
+      <text class="demo-title">继续最近器械</text>
+      <text class="demo-desc">现场无法扫码时，可从最近器械快速恢复训练记录</text>
     </view>
 
     <view v-if="resolvedEquipment" class="resolved-card">
@@ -154,7 +154,7 @@
         :class="{ matched: isExpectedDevice(device) }"
         @tap="onSelectDevice(device)"
       >
-        <view class="device-scan-icon">🏋️</view>
+        <view class="device-scan-icon">BLE</view>
         <view class="device-scan-info">
           <text class="device-scan-name">{{ device.name || device.deviceCode || '未知设备' }}</text>
           <text class="device-scan-code">localName: {{ device.localName || '-' }}</text>
@@ -188,9 +188,9 @@
           :class="{ online: device.status === 'online' }"
           @tap="onBoundDeviceTap(device)"
           @touchstart="onTouchStart"
-          @touchend="onTouchEnd(device.deviceCode)"
+          @touchend="onTouchEnd(device.deviceCode, $event)"
         >
-          <view class="device-icon">🏋️</view>
+          <view class="device-icon">IMU</view>
           <view class="device-info">
             <text class="device-name">{{ device.deviceName }}</text>
             <text class="device-code">{{ device.deviceCode }}</text>
@@ -225,18 +225,22 @@
 
 <script>
 import { defineComponent, ref, computed, onMounted, onUnmounted } from 'vue';
-import Taro from '@tarojs/taro';
+import Taro, { useDidHide, useUnload } from '@tarojs/taro';
 import {
   getMyDevices,
   heartbeatEquipment,
   normalizeScanCode,
+  parseScanPayload,
   occupyEquipment,
   releaseEquipment,
   resolveEquipment,
   submitTrainingSession,
+  unbindDevice,
 } from '../../services/api';
 import { bleService } from '../../services/ble';
 import { ImuCounterService } from '../../services/counter';
+
+const HEARTBEAT_INTERVAL_MS = 10000;
 
 export default defineComponent({
   setup() {
@@ -264,12 +268,34 @@ export default defineComponent({
     let heartbeatTimer = null;
     let scanCooldown = false;
     let touchStartX = 0;
+    let cleanupPromise = null;
+
+    function normalizeRouterParams(params) {
+      const normalized = { ...(params || {}) };
+      if (normalized.scene) {
+        let sceneValue = normalized.scene;
+        try {
+          sceneValue = decodeURIComponent(normalized.scene);
+        } catch (e) {
+          console.warn('[DeviceBinding] decode scene failed, using raw scene', e);
+        }
+        const scanPayload = parseScanPayload(sceneValue);
+        if (!normalized.equipmentCode && scanPayload.equipmentCode) {
+          normalized.equipmentCode = scanPayload.equipmentCode;
+        }
+        if (!normalized.venueId && scanPayload.venueId) {
+          normalized.venueId = scanPayload.venueId;
+        }
+      }
+      return normalized;
+    }
 
     onMounted(async () => {
-      const params = Taro.getCurrentInstance()?.router?.params || {};
+      const params = normalizeRouterParams(Taro.getCurrentInstance()?.router?.params || {});
       if (params.taskId || params.exerciseName) {
         selectedTask.value = {
           taskId: params.taskId || '',
+          prescriptionId: params.prescriptionId || '',
           exerciseName: decodeURIComponent(params.exerciseName || '训练任务'),
           exerciseType: decodeURIComponent(params.exerciseType || 'strength'),
           targetSets: params.targetSets || '',
@@ -297,13 +323,16 @@ export default defineComponent({
       }
     });
 
+    useDidHide(() => {
+      cleanupTrainingResources().catch(() => undefined);
+    });
+
+    useUnload(() => {
+      cleanupTrainingResources().catch(() => undefined);
+    });
+
     onUnmounted(() => {
-      if (scanTimer) clearTimeout(scanTimer);
-      if (sessionTimer) clearInterval(sessionTimer);
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-      bleService.stopScan();
-      bleService.disconnect().catch(() => undefined);
-      releaseCurrentUsage().catch(() => undefined);
+      cleanupTrainingResources().catch(() => undefined);
     });
 
     async function onScanQrCode() {
@@ -368,11 +397,11 @@ export default defineComponent({
     }
 
     function onTouchStart(e) {
-      touchStartX = e.touches[0].clientX;
+      touchStartX = e?.touches?.[0]?.clientX || 0;
     }
 
     function onTouchEnd(deviceCode, e) {
-      const diff = touchStartX - (e.changedTouches[0]?.clientX || 0);
+      const diff = touchStartX - (e?.changedTouches?.[0]?.clientX || 0);
       if (diff > 60) {
         swipeDeviceId.value = deviceCode;
       }
@@ -514,17 +543,7 @@ export default defineComponent({
     }
 
     async function stopCurrentBleSession() {
-      stopBleScan();
-      if (sessionTimer) clearInterval(sessionTimer);
-      sessionTimer = null;
-      sessionStartedAt.value = 0;
-      sessionElapsedMs.value = 0;
-      connectionStatus.value = 'idle';
-      autoConnecting.value = false;
-      await bleService.disconnect().catch((err) => {
-        console.warn('[DeviceBinding] disconnect before switch ignored', err);
-      });
-      await releaseCurrentUsage();
+      await cleanupTrainingResources();
     }
 
     async function occupyResolvedEquipment(equipment) {
@@ -568,7 +587,7 @@ export default defineComponent({
           bindResult.value = { type: 'error', message: '器械占用已失效，请重新扫码连接' };
           stopCurrentBleSession();
         }
-      }, 30000);
+      }, HEARTBEAT_INTERVAL_MS);
     }
 
     async function releaseCurrentUsage() {
@@ -590,6 +609,30 @@ export default defineComponent({
       } catch (e) {
         console.warn('[DeviceBinding] release usage ignored', e);
       }
+    }
+
+    async function cleanupTrainingResources() {
+      if (cleanupPromise) {
+        return cleanupPromise;
+      }
+      cleanupPromise = (async () => {
+        stopBleScan();
+        if (sessionTimer) clearInterval(sessionTimer);
+        sessionTimer = null;
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        connectionStatus.value = 'idle';
+        autoConnecting.value = false;
+        sessionStartedAt.value = 0;
+        sessionElapsedMs.value = 0;
+        await bleService.disconnect().catch((err) => {
+          console.warn('[DeviceBinding] disconnect ignored during cleanup', err);
+        });
+        await releaseCurrentUsage();
+      })().finally(() => {
+        cleanupPromise = null;
+      });
+      return cleanupPromise;
     }
 
     async function onSelectDevice(device, fromAuto = false) {
@@ -692,6 +735,7 @@ export default defineComponent({
           usageSessionId: activeUsage.value?.usageSessionId,
           exerciseType: selectedTask.value?.exerciseType || resolvedEquipment.value.equipmentType || 'strength',
           taskId: selectedTask.value?.taskId,
+          prescriptionId: selectedTask.value?.prescriptionId,
           exerciseName: selectedTask.value?.exerciseName,
           completedSets: finalState.sets,
           totalReps: finalState.reps,
@@ -710,17 +754,12 @@ export default defineComponent({
           type: 'success',
           message: `训练已保存，记录编号 ${result.data.sessionId}`,
         };
-        showSavedActions();
-        await bleService.disconnect();
-        await releaseCurrentUsage();
-        if (sessionTimer) clearInterval(sessionTimer);
-        sessionTimer = null;
-        connectionStatus.value = 'idle';
-        sessionStartedAt.value = 0;
-        sessionElapsedMs.value = 0;
+        const resultData = buildResultData(result, finalState, durationMin);
+        await cleanupTrainingResources();
         counter.reset();
         counterState.value = finalState;
         latestSample.value = null;
+        showSavedActions(resultData);
       } catch (e) {
         wx.hideLoading();
         console.error('[DeviceBinding] finish session failed', e);
@@ -747,6 +786,7 @@ export default defineComponent({
           usageSessionId: activeUsage.value?.usageSessionId,
           exerciseType: selectedTask.value?.exerciseType || resolvedEquipment.value.equipmentType || 'strength',
           taskId: selectedTask.value?.taskId,
+          prescriptionId: selectedTask.value?.prescriptionId,
           exerciseName: selectedTask.value?.exerciseName,
           completedSets: simulatedSets.length,
           totalReps: simulatedSets.reduce((sum, set) => sum + set.reps, 0),
@@ -763,7 +803,12 @@ export default defineComponent({
           type: 'success',
           message: `训练记录已保存，记录编号 ${result.data.sessionId}`,
         };
-        showSavedActions();
+        await cleanupTrainingResources();
+        showSavedActions(buildResultData(result, {
+          sets: simulatedSets.length,
+          reps: simulatedSets.reduce((sum, set) => sum + set.reps, 0),
+          setSummaries: simulatedSets,
+        }, 1));
       } catch (e) {
         wx.hideLoading();
         console.error('[DeviceBinding] simulate session failed', e);
@@ -771,14 +816,38 @@ export default defineComponent({
       }
     }
 
-    function showSavedActions(sessionData) {
-      const data = sessionData || {
-        exerciseName: selectedTask.value?.exerciseName,
-        completedSets: counterState.value?.sets || 0,
-        totalReps: counterState.value?.reps || 0,
-        durationMin: sessionDurationMin.value,
-        sets: counterState.value?.setSummaries || [],
+    function buildResultData(result, summary, durationMin) {
+      const normalizedSets = (summary?.setSummaries || []).map((set) => ({
+        setNo: set.setNo,
+        reps: Number(set.reps || 0),
+        durationSec: Number(set.durationSec || 0),
+        startedAt: set.startedAt,
+        endedAt: set.endedAt,
+        peakLoadKg: set.peakLoadKg || Number(selectedTask.value?.targetLoadKg || 0),
+      }));
+      return {
+        sessionId: result?.data?.sessionId,
+        exerciseName: selectedTask.value?.exerciseName || resolvedEquipment.value?.equipmentName || '器械训练',
+        equipmentName: resolvedEquipment.value?.equipmentName || '',
+        equipmentCode: resolvedEquipment.value?.equipmentCode || '',
+        deviceCode: resolvedEquipment.value?.deviceCode || '',
+        completedSets: Number(summary?.sets || normalizedSets.length || 0),
+        totalReps: Number(summary?.reps || normalizedSets.reduce((sum, set) => sum + set.reps, 0)),
+        durationMin,
+        targetSets: Number(selectedTask.value?.targetSets || 0),
+        targetReps: Number(selectedTask.value?.targetReps || 0),
+        targetLoadKg: Number(selectedTask.value?.targetLoadKg || 0),
+        sets: normalizedSets,
+        analysisTaskId: result?.data?.analysisTaskId || '',
+        analysisStatus: result?.data?.analysisStatus || '',
+        analysisMessage: result?.data?.analysisMessage || '',
+        aiFeedback: result?.data?.aiFeedback || null,
+        alineProvider: result?.data?.alineProvider || '',
       };
+    }
+
+    function showSavedActions(sessionData) {
+      const data = sessionData || buildResultData(null, counterState.value, sessionDurationMin.value);
       wx.navigateTo({
         url: `/pages/training-result/index?data=${encodeURIComponent(JSON.stringify(data))}`,
         fail: () => {
@@ -952,7 +1021,7 @@ export default defineComponent({
 <style>
 .device-binding-page {
   padding: 28rpx 24rpx 48rpx;
-  background: #f4f7fb;
+  background: #edf2f7;
   min-height: 100vh;
   box-sizing: border-box;
 }
@@ -960,16 +1029,17 @@ export default defineComponent({
   margin-bottom: 24rpx;
 }
 .page-title {
-  font-size: 40rpx;
-  font-weight: 800;
-  color: #172033;
+  font-size: 42rpx;
+  font-weight: 900;
+  color: #101828;
 }
 .task-context-card {
   background: #fff;
-  border: 1rpx solid #d6e8ff;
-  border-radius: 16rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  border-radius: 24rpx;
   padding: 28rpx;
   margin-bottom: 24rpx;
+  box-shadow: 0 14rpx 34rpx rgba(20, 38, 70, 0.06);
 }
 .task-context-title {
   display: block;
@@ -990,53 +1060,67 @@ export default defineComponent({
   font-size: 26rpx;
 }
 .scan-card {
-  background: #fff;
-  border-radius: 16rpx;
+  background: linear-gradient(135deg, #101828, #1f2a44);
+  border-radius: 26rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
   display: flex;
   align-items: center;
-  border: 1rpx solid #edf1f6;
-  box-shadow: 0 10rpx 28rpx rgba(20, 38, 70, 0.04);
+  border: 0;
+  box-shadow: 0 22rpx 42rpx rgba(16, 24, 40, 0.18);
+  color: #fff;
 }
-.scan-icon { font-size: 56rpx; margin-right: 20rpx; }
+.scan-icon {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 24rpx;
+  background: rgba(49,212,160,0.16);
+  color: #31d4a0;
+  font-size: 26rpx;
+  font-weight: 900;
+  margin-right: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .scan-info { flex: 1; }
 .scan-title {
   font-size: 32rpx;
-  font-weight: 600;
-  color: #1a1a2e;
+  font-weight: 900;
+  color: #fff;
   display: block;
   margin-bottom: 8rpx;
 }
-.scan-desc { font-size: 26rpx; color: #999; }
-.scan-arrow { font-size: 48rpx; color: #ccc; }
+.scan-desc { font-size: 26rpx; color: rgba(255,255,255,0.68); }
+.scan-arrow { font-size: 48rpx; color: rgba(255,255,255,0.58); }
 .demo-card {
-  background: #eef7ff;
-  border: 1rpx solid #b9dcff;
-  border-radius: 16rpx;
+  background: #fff;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  border-radius: 24rpx;
   padding: 24rpx 28rpx;
   margin-bottom: 24rpx;
+  box-shadow: 0 12rpx 28rpx rgba(20, 38, 70, 0.05);
 }
 .demo-title {
   display: block;
   font-size: 28rpx;
-  font-weight: 600;
-  color: #1677d2;
+  font-weight: 900;
+  color: #101828;
   margin-bottom: 8rpx;
 }
 .demo-desc {
   display: block;
   font-size: 24rpx;
-  color: #4b6f91;
+  color: #667085;
   line-height: 1.5;
 }
 .resolved-card {
   background: #ffffff;
-  border-radius: 20rpx;
+  border-radius: 26rpx;
   padding: 28rpx 32rpx;
   margin-bottom: 24rpx;
-  border: 1rpx solid #edf1f6;
-  box-shadow: 0 16rpx 40rpx rgba(20, 38, 70, 0.06);
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
+  box-shadow: 0 16rpx 40rpx rgba(20, 38, 70, 0.08);
 }
 .resolved-head {
   display: flex;
@@ -1351,7 +1435,20 @@ export default defineComponent({
   padding-right: 16rpx;
 }
 .device-scan-item:last-child { border-bottom: none; }
-.device-scan-icon { font-size: 36rpx; margin-right: 16rpx; }
+.device-scan-icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 18rpx;
+  background: #101828;
+  color: #31d4a0;
+  font-size: 20rpx;
+  font-weight: 900;
+  margin-right: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .device-scan-info { flex: 1; }
 .device-scan-name {
   font-size: 30rpx;
@@ -1369,7 +1466,7 @@ export default defineComponent({
 }
 .device-scan-rssi { font-size: 24rpx; color: #bbb; display: block; }
 .bind-btn {
-  background: #4A90E2;
+  background: #101828;
   color: #fff;
   font-size: 26rpx;
   padding: 10rpx 24rpx;
@@ -1383,9 +1480,10 @@ export default defineComponent({
 }
 .bound-devices-card {
   background: #fff;
-  border-radius: 16rpx;
+  border-radius: 24rpx;
   padding: 20rpx;
   margin-bottom: 24rpx;
+  border: 1rpx solid rgba(222, 228, 236, 0.9);
 }
 .device-item {
   display: flex;
@@ -1417,7 +1515,19 @@ export default defineComponent({
   font-size: 26rpx;
   border-radius: 0 12rpx 12rpx 0;
 }
-.device-icon { font-size: 36rpx; margin-right: 16rpx; }
+.device-icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 18rpx;
+  background: #101828;
+  color: #31d4a0;
+  font-size: 20rpx;
+  font-weight: 900;
+  margin-right: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .device-info { flex: 1; }
 .device-name { font-size: 30rpx; font-weight: 600; color: #1a1a2e; display: block; }
 .device-code { font-size: 24rpx; color: #999; display: block; }
