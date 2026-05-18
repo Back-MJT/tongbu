@@ -48,6 +48,7 @@
           class="day-col"
         >
           <view class="bar-wrap">
+            <text v-if="day.minutes > 0" class="bar-value">{{ day.minutes }}</text>
             <view
               class="bar"
               :style="{ height: day.minutes > 0 ? (day.minutes / maxWeekMinutes * 100) + '%' : '4rpx' }"
@@ -638,6 +639,14 @@ export default defineComponent({
   background: #e0e0e0;
   border-radius: 4rpx 4rpx 0 0;
   transition: height 0.3s ease;
+}
+.bar-value {
+  font-size: 22rpx;
+  color: #4A90E2;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 6rpx;
+  line-height: 1;
 }
 .bar.done { background: #b3d4fc; }
 .bar.active { background: #4A90E2; }

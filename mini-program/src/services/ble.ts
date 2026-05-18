@@ -61,6 +61,8 @@ class BleService {
   private commandTimerId: ReturnType<typeof setInterval> | null = null;
   private notifyListener: ((res: WechatMiniprogram.OnBLECharacteristicValueChangeCallbackResult) => void) | null = null;
   private deviceFoundListener: ((res: WechatMiniprogram.OnBluetoothDeviceFoundCallbackResult) => void) | null = null;
+  private noDataTimerId: ReturnType<typeof setTimeout> | null = null;
+  private lastSampleTimestamp = 0;
 
   private hasBleApi(): boolean {
     return typeof wx !== 'undefined'
@@ -235,6 +237,7 @@ class BleService {
   }
 
   async disconnect(deviceId?: string): Promise<void> {
+    this.clearNoDataTimer();
     const targetDeviceId = deviceId || this.activeDeviceId;
     if (!targetDeviceId) {
       return;
@@ -276,6 +279,30 @@ class BleService {
     this.notifyListenerBound = false;
   }
 
+  private clearNoDataTimer(): void {
+    if (this.noDataTimerId) {
+      clearTimeout(this.noDataTimerId);
+      this.noDataTimerId = null;
+    }
+  }
+
+  private startNoDataTimer(): void {
+    this.clearNoDataTimer();
+    this.noDataTimerId = setTimeout(() => {
+      console.warn('[BLE] No IMU data for 5 minutes, auto disconnecting');
+      this.disconnect().catch((err) => {
+        console.warn('[BLE] auto disconnect failed', err);
+      });
+    }, 5 * 60 * 1000);
+  }
+
+  private recordSampleReceived(): void {
+    this.lastSampleTimestamp = Date.now();
+    if (this.activeDeviceId && !this.noDataTimerId) {
+      this.startNoDataTimer();
+    }
+  }
+
   private bindNotifyListener() {
     if (this.notifyListenerBound) {
       return;
@@ -296,6 +323,7 @@ class BleService {
       if (sample && this.sampleCallback) {
         this.sampleCallback(sample);
       }
+      this.recordSampleReceived();
     };
     wx.onBLECharacteristicValueChange(this.notifyListener);
     this.notifyListenerBound = true;

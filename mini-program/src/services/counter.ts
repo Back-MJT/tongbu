@@ -34,6 +34,11 @@ export interface CountingState {
   lastRepAt: number;
   restMs: number;
   setSummaries: SetSummary[];
+  duration: number;
+  avgRepTime: number;
+  bleConnected: boolean;
+  imuValid: boolean;
+  sensorStatus: 'connected' | 'no_signal' | 'no_data' | 'disconnected';
 }
 
 const DEFAULT_CONFIG: Required<CountingConfig> = {
@@ -59,6 +64,9 @@ export class ImuCounterService {
   private currentSetStartedAt = 0;
   private completedSetReps = 0;
   private setSummaries: SetSummary[] = [];
+  private sessionStartedAt = 0;
+  private bleConnected = false;
+  private imuValid = false;
 
   constructor(config?: CountingConfig) {
     this.config = { ...DEFAULT_CONFIG, ...(config || {}) };
@@ -84,12 +92,24 @@ export class ImuCounterService {
     this.currentSetStartedAt = 0;
     this.completedSetReps = 0;
     this.setSummaries = [];
+    this.sessionStartedAt = 0;
+    this.bleConnected = false;
+    this.imuValid = false;
   }
 
   pushSample(sample: ImuSample): CountingState {
     const rawAxis = this.getAxisValue(sample, this.config.mainAxis);
     const axisValue = this.smooth(rawAxis);
     const restMs = this.lastRepAt > 0 ? sample.timestamp - this.lastRepAt : 0;
+
+    // Track BLE/IMU status
+    this.bleConnected = true;
+    this.imuValid = this.isValidImu(sample);
+
+    // Auto-start session timer on first sample
+    if (this.sessionStartedAt === 0) {
+      this.sessionStartedAt = sample.timestamp;
+    }
 
     if (this.currentSetReps > 0 && restMs >= this.config.setRestMs) {
       this.finalizeCurrentSet(this.lastRepAt);
@@ -148,6 +168,21 @@ export class ImuCounterService {
     return this.buildState(0, 0);
   }
 
+  setConnectionStatus(connected: boolean) {
+    this.bleConnected = connected;
+  }
+
+  private isValidImu(sample: ImuSample): boolean {
+    const pitch = sample.pitch ?? NaN;
+    const roll = sample.roll ?? NaN;
+    const yaw = sample.yaw ?? NaN;
+    return (
+      typeof pitch === 'number' && !Number.isNaN(pitch) &&
+      typeof roll === 'number' && !Number.isNaN(roll) &&
+      typeof yaw === 'number' && !Number.isNaN(yaw)
+    );
+  }
+
   private recordRep(timestamp: number) {
     this.reps += 1;
     this.currentSetReps += 1;
@@ -183,6 +218,23 @@ export class ImuCounterService {
     const rangeValue = rangeReady ? Math.max(0, this.peakValue - this.valleyValue) : 0;
     const phase = rangeReady || this.currentSetReps > 0 ? this.phase : 'idle';
 
+    // duration: seconds since session started
+    const now = this.lastRepAt > 0 ? this.lastRepAt : (this.sessionStartedAt > 0 ? Date.now() : 0);
+    const duration = this.sessionStartedAt > 0 ? Math.max(0, Math.round((now - this.sessionStartedAt) / 1000)) : 0;
+
+    // avgRepTime: seconds per rep (total reps in current session)
+    const avgRepTime = this.reps > 0 ? Math.round(duration / this.reps) : 0;
+
+    // sensorStatus: derived from bleConnected and imuValid
+    let sensorStatus: CountingState['sensorStatus'] = 'disconnected';
+    if (!this.bleConnected) {
+      sensorStatus = 'disconnected';
+    } else if (!this.imuValid) {
+      sensorStatus = 'no_data';
+    } else if (this.bleConnected && this.imuValid) {
+      sensorStatus = 'connected';
+    }
+
     return {
       reps: this.reps,
       sets: this.sets,
@@ -194,6 +246,11 @@ export class ImuCounterService {
       lastRepAt: this.lastRepAt,
       restMs,
       setSummaries: [...this.setSummaries],
+      duration,
+      avgRepTime,
+      bleConnected: this.bleConnected,
+      imuValid: this.imuValid,
+      sensorStatus,
     };
   }
 

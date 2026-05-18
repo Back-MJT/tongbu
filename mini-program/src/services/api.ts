@@ -410,6 +410,47 @@ export async function submitTrainingSession(payload: {
   });
 }
 
+export async function submitForAnalysis(payload: {
+  userId: string;
+  sessionId: string;
+  completedSets: number;
+  totalReps: number;
+  durationMin: number;
+}): Promise<{ code: number; data?: { aiFeedback?: AiFeedback } }> {
+  if (isDemoMode()) {
+    return {
+      code: 200,
+      data: {
+        aiFeedback: {
+          overallScore: 78,
+          strengthLevel: '良好',
+          suggestions: [
+            '建议增加核心稳定性训练',
+            '注意训练后拉伸放松',
+          ],
+        },
+      },
+    };
+  }
+  return request(API_BASE, '/api/intervention/analysis', {
+    method: 'POST',
+    data: payload,
+  });
+}
+
+export async function getAnalysisResult(sessionId: string): Promise<{ code: number; data?: { aiFeedback?: AiFeedback; status?: string } }> {
+  if (isDemoMode()) {
+    return { code: 200, data: { status: 'completed' } };
+  }
+  return request(API_BASE, `/api/intervention/analysis/${sessionId}`);
+}
+
+export interface AiFeedback {
+  overallScore: number;
+  strengthLevel: string;
+  suggestions?: string[];
+}
+
 export async function getTrainingPlan(params: {
   deviceCode: string;
   exerciseType: string;

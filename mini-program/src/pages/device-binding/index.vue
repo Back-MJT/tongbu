@@ -49,7 +49,7 @@
 
       <view class="live-panel">
         <view class="live-stat primary">
-          <text class="live-value">{{ counterState?.reps || 0 }}</text>
+          <text class="live-value large">{{ counterState?.reps || 0 }}</text>
           <text class="live-label">累计次数</text>
         </view>
         <view class="live-stat">
@@ -59,6 +59,24 @@
         <view class="live-stat">
           <text class="live-value">{{ counterState?.currentSetReps || 0 }}</text>
           <text class="live-label">当前组</text>
+        </view>
+      </view>
+
+      <!-- 连接状态详情 -->
+      <view class="connection-detail" v-if="connectionStatus !== 'connected'">
+        <view class="conn-state-item" :class="connectionStatus">
+          <text class="conn-state-dot"></text>
+          <text class="conn-state-label">{{ connectionStatusText }}</text>
+        </view>
+        <view class="conn-state-hint" v-if="connectionStatus === 'idle'">
+          <text>请先扫码器械二维码，系统将自动连接绑定传感器</text>
+        </view>
+        <view class="conn-state-hint" v-if="connectionStatus === 'connecting'">
+          <text>正在建立蓝牙连接，请保持手机靠近传感器...</text>
+        </view>
+        <view class="conn-state-hint error" v-if="connectionStatus === 'failed'">
+          <text>连接失败：请确保传感器已通电、手机蓝牙已开启，并靠近器械后重试</text>
+          <view class="conn-retry-btn" @tap="retryConnection">重新连接</view>
         </view>
       </view>
 
@@ -162,17 +180,27 @@
       <view
         v-for="(device, idx) in myDevices"
         :key="idx"
-        class="device-item"
-        :class="{ online: device.status === 'online' }"
-        @tap="onBoundDeviceTap(device)"
+        class="device-item-wrap"
+        :class="{ swiped: swipeDeviceId === device.deviceCode }"
       >
-        <view class="device-icon">🏋️</view>
-        <view class="device-info">
-          <text class="device-name">{{ device.deviceName }}</text>
-          <text class="device-code">{{ device.deviceCode }}</text>
-          <text class="device-status" :class="device.status">
-            {{ device.status === 'online' ? '● 在线' : '○ 离线' }}
-          </text>
+        <view
+          class="device-item"
+          :class="{ online: device.status === 'online' }"
+          @tap="onBoundDeviceTap(device)"
+          @touchstart="onTouchStart"
+          @touchend="onTouchEnd(device.deviceCode)"
+        >
+          <view class="device-icon">🏋️</view>
+          <view class="device-info">
+            <text class="device-name">{{ device.deviceName }}</text>
+            <text class="device-code">{{ device.deviceCode }}</text>
+            <text class="device-status" :class="device.status">
+              {{ device.status === 'online' ? '● 在线' : '○ 离线' }}
+            </text>
+          </view>
+        </view>
+        <view class="device-delete-btn" @tap="onDeleteBoundDevice(device)">
+          <text>删除</text>
         </view>
       </view>
     </view>
@@ -215,6 +243,7 @@ export default defineComponent({
     const isScanning = ref(false);
     const foundDevices = ref([]);
     const myDevices = ref([]);
+    const swipeDeviceId = ref(null);
     const bindResult = ref(null);
     const resolvedEquipment = ref(null);
     const latestSample = ref(null);
@@ -233,6 +262,8 @@ export default defineComponent({
     let scanTimer = null;
     let sessionTimer = null;
     let heartbeatTimer = null;
+    let scanCooldown = false;
+    let touchStartX = 0;
 
     onMounted(async () => {
       const params = Taro.getCurrentInstance()?.router?.params || {};
@@ -277,6 +308,12 @@ export default defineComponent({
 
     async function onScanQrCode() {
       console.log('[DeviceBinding] scan tapped');
+      if (scanCooldown) {
+        wx.showToast({ title: '请稍候再扫码', icon: 'none' });
+        return;
+      }
+      scanCooldown = true;
+      setTimeout(() => { scanCooldown = false; }, 2000);
       if (typeof wx.scanCode !== 'function') {
         wx.showToast({ title: '当前环境不支持扫码，已使用演示器械', icon: 'none' });
         await useCurrentEquipment();
@@ -327,6 +364,45 @@ export default defineComponent({
         stopBleScan();
       } else {
         await startBleScan(false);
+      }
+    }
+
+    function onTouchStart(e) {
+      touchStartX = e.touches[0].clientX;
+    }
+
+    function onTouchEnd(deviceCode, e) {
+      const diff = touchStartX - (e.changedTouches[0]?.clientX || 0);
+      if (diff > 60) {
+        swipeDeviceId.value = deviceCode;
+      }
+    }
+
+    async function onDeleteBoundDevice(device) {
+      const confirm = await new Promise((resolve) => {
+        wx.showModal({
+          title: '确认删除',
+          content: `确定要删除 ${device.deviceName || device.deviceCode} 吗？`,
+          success: (res) => resolve(res.confirm),
+        });
+      });
+      if (!confirm) return;
+      try {
+        await unbindDevice(device.bindingId);
+        myDevices.value = myDevices.value.filter(d => d.bindingId !== device.bindingId);
+        wx.showToast({ title: '已删除', icon: 'success' });
+        swipeDeviceId.value = null;
+      } catch (e) {
+        wx.showToast({ title: '删除失败', icon: 'none' });
+      }
+    }
+
+    async function retryConnection() {
+      connectionStatus.value = 'idle';
+      if (resolvedEquipment.value) {
+        await startBleScan(true);
+      } else {
+        wx.showToast({ title: '请先扫码器械', icon: 'none' });
       }
     }
 
@@ -571,6 +647,10 @@ export default defineComponent({
     }
 
     function onBoundDeviceTap(device) {
+      if (swipeDeviceId.value === device.deviceCode) {
+        swipeDeviceId.value = null;
+        return;
+      }
       console.log('[DeviceBinding] bound device tapped', device);
       const equipmentCode = device.equipmentCode || device.equipment_code;
       wx.showModal({
@@ -691,22 +771,18 @@ export default defineComponent({
       }
     }
 
-    function showSavedActions() {
-      wx.showModal({
-        title: '训练已保存',
-        content: '要去进度页查看训练记录吗？',
-        confirmText: '去查看',
-        cancelText: '继续训练',
-        success: (res) => {
-          if (res.confirm) {
-            wx.switchTab({
-              url: '/pages/progress/index',
-              fail: (err) => {
-                console.error('[DeviceBinding] switch progress failed', err);
-                wx.showToast({ title: '请从底部进度页查看记录', icon: 'none' });
-              },
-            });
-          }
+    function showSavedActions(sessionData) {
+      const data = sessionData || {
+        exerciseName: selectedTask.value?.exerciseName,
+        completedSets: counterState.value?.sets || 0,
+        totalReps: counterState.value?.reps || 0,
+        durationMin: sessionDurationMin.value,
+        sets: counterState.value?.setSummaries || [],
+      };
+      wx.navigateTo({
+        url: `/pages/training-result/index?data=${encodeURIComponent(JSON.stringify(data))}`,
+        fail: () => {
+          wx.switchTab({ url: '/pages/progress/index' });
         },
       });
     }
@@ -865,6 +941,9 @@ export default defineComponent({
       simulateTrainingSession,
       isExpectedDevice,
       shortDeviceId,
+      retryConnection,
+      swipeDeviceId,
+      onDeleteBoundDevice,
     };
   },
 });
@@ -1047,8 +1126,61 @@ export default defineComponent({
   font-weight: 800;
   line-height: 1.1;
 }
+.live-value.large {
+  font-size: 80rpx;
+}
 .live-stat.primary .live-value {
   color: #2563eb;
+}
+.connection-detail {
+  background: #f8fafc;
+  border-radius: 14rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 18rpx;
+  border: 1rpx solid #edf1f6;
+}
+.conn-state-item {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-bottom: 10rpx;
+}
+.conn-state-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #ccc;
+}
+.conn-state-item.idle .conn-state-dot { background: #ccc; }
+.conn-state-item.connecting .conn-state-dot { background: #ffa500; animation: pulse 1s infinite; }
+.conn-state-item.failed .conn-state-dot { background: #ff4d4f; }
+.conn-state-item.connected .conn-state-dot { background: #52c41a; }
+.conn-state-label {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+.conn-state-item.connecting .conn-state-label { color: #b56a00; }
+.conn-state-item.failed .conn-state-label { color: #d93025; }
+.conn-state-item.connected .conn-state-label { color: #0b8f55; }
+.conn-state-hint {
+  font-size: 24rpx;
+  color: #666;
+  line-height: 1.5;
+}
+.conn-state-hint.error { color: #d93025; }
+.conn-retry-btn {
+  margin-top: 12rpx;
+  display: inline-block;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 24rpx;
+  padding: 8rpx 20rpx;
+  border-radius: 20rpx;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 .live-label {
   display: block;
@@ -1262,6 +1394,29 @@ export default defineComponent({
   border-bottom: 1rpx solid #f0f0f0;
 }
 .device-item:last-child { border-bottom: none; }
+.device-item-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12rpx;
+}
+.device-item-wrap.swiped .device-item {
+  transform: translateX(-120rpx);
+  transition: transform 0.2s;
+}
+.device-delete-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 120rpx;
+  background: #ff4d4f;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  border-radius: 0 12rpx 12rpx 0;
+}
 .device-icon { font-size: 36rpx; margin-right: 16rpx; }
 .device-info { flex: 1; }
 .device-name { font-size: 30rpx; font-weight: 600; color: #1a1a2e; display: block; }

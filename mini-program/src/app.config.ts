@@ -10,6 +10,7 @@ export default defineAppConfig({
     'pages/device-binding/index',
     'pages/login/index',
     'pages/training-plan/index',
+    'pages/training-result/index',
     'pages/privacy/index',
     'pages/user-agreement/index',
   ],
